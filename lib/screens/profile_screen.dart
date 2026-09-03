@@ -20,11 +20,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _bio =
       'Welcome to my Gapshap profile 💜\n'
       'Connect • Share • Chat';
-
-  int _posts = 12;
-  int _followers = 248;
-  int _following = 186;
-
+  final int _posts = 12;
+  final int _followers = 248;
+  final int _following = 186;
   // ---------------------------------------------------------------------------
   // BUILD
   // ---------------------------------------------------------------------------

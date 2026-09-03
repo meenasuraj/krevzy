@@ -1,6 +1,12 @@
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/chat_lock_service.dart';
+import '../services/chat_service.dart';
+import '../services/user_service.dart';
 import 'chat_screen.dart';
+import 'new_chat_screen.dart';
 
 class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
@@ -10,33 +16,249 @@ class ChatsScreen extends StatefulWidget {
 }
 
 class _ChatsScreenState extends State<ChatsScreen> {
-  final List<Map<String, dynamic>> chats = const [
-    {'name': 'Rahul', 'message': 'Hello 👋', 'time': '10:30 AM', 'unread': 2},
-    {
-      'name': 'Priya',
-      'message': 'Kal milte hain 😊',
-      'time': '09:45 AM',
-      'unread': 0,
-    },
-    {
-      'name': 'Aman',
-      'message': 'Photo bhej dena',
-      'time': 'Yesterday',
-      'unread': 3,
-    },
-    {
-      'name': 'Neha',
-      'message': 'Good night 🌙',
-      'time': 'Yesterday',
-      'unread': 0,
-    },
-  ];
+  Map<String, String> _chatPinHashes = {};
 
-  // Har chat ka PIN yahan save rahega.
-  final Map<String, String> _chatPins = {};
+  bool _isLoadingPins = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadChatLocks();
+  }
+
+  // ============================================================
+  // LOAD CHAT LOCKS
+  // ============================================================
+
+  Future<void> _loadChatLocks() async {
+    final hashes = await ChatLockService.loadPinHashes();
+
+    if (!mounted) return;
+
+    setState(() {
+      _chatPinHashes = hashes;
+      _isLoadingPins = false;
+    });
+  }
+
+  // ============================================================
+  // SAVE CHAT LOCK
+  // ============================================================
+
+  Future<void> _saveChatLock(String chatId, String pinHash) async {
+    final updated = Map<String, String>.from(_chatPinHashes);
+
+    updated[chatId] = pinHash;
+
+    await ChatLockService.savePinHashes(updated);
+
+    if (!mounted) return;
+
+    setState(() {
+      _chatPinHashes = updated;
+    });
+  }
+
+  // ============================================================
+  // REMOVE CHAT LOCK
+  // ============================================================
+
+  Future<void> _removeChatLock(String chatId) async {
+    final updated = Map<String, String>.from(_chatPinHashes);
+
+    updated.remove(chatId);
+
+    await ChatLockService.savePinHashes(updated);
+
+    if (!mounted) return;
+
+    setState(() {
+      _chatPinHashes = updated;
+    });
+  }
+
+  // ============================================================
+  // GET OTHER USER ID
+  // ============================================================
+
+  String? _getOtherUserId(Map<String, dynamic> data) {
+    final currentUser = FirebaseAuth.instance.currentUser;
+
+    if (currentUser == null) {
+      return null;
+    }
+
+    final participants = List<String>.from(data['participants'] ?? []);
+
+    for (final uid in participants) {
+      if (uid != currentUser.uid) {
+        return uid;
+      }
+    }
+
+    return null;
+  }
+
+  // ============================================================
+  // OPEN CHAT
+  // ============================================================
+
+  Future<void> _openChat(String chatId, String otherUserId) async {
+    final userDoc = await UserService.getUserById(otherUserId);
+
+    if (!mounted) return;
+
+    final data = userDoc.data();
+
+    final name = data?['name']?.toString().trim();
+
+    final username = data?['username']?.toString().trim();
+
+    final displayName = name != null && name.isNotEmpty
+        ? name
+        : username != null && username.isNotEmpty
+        ? '@$username'
+        : 'Gapshap User';
+
+    final savedPinHash = _chatPinHashes[chatId];
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          chatId: chatId,
+          name: displayName,
+          initialPinHash: savedPinHash,
+          onPinSet: (pinHash) async {
+            await _saveChatLock(chatId, pinHash);
+          },
+          onLockRemoved: () async {
+            await _removeChatLock(chatId);
+          },
+        ),
+      ),
+    );
+
+    // Reload lock state after returning.
+    await _loadChatLocks();
+  }
+
+  // ============================================================
+  // NEW CHAT
+  // ============================================================
+
+  Future<void> _newChat() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const NewChatScreen()),
+    );
+
+    // Refresh after creating a chat.
+    if (!mounted) return;
+
+    setState(() {});
+  }
+
+  // ============================================================
+  // CHAT TILE
+  // ============================================================
+
+  Widget _buildChatTile(DocumentSnapshot<Map<String, dynamic>> document) {
+    final chatId = document.id;
+
+    final data = document.data();
+
+    if (data == null) {
+      return const SizedBox.shrink();
+    }
+
+    final otherUserId = _getOtherUserId(data);
+
+    if (otherUserId == null) {
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: UserService.getUserById(otherUserId),
+      builder: (context, userSnapshot) {
+        if (userSnapshot.connectionState == ConnectionState.waiting) {
+          return const ListTile(
+            leading: CircleAvatar(child: Icon(Icons.person)),
+            title: Text('Loading...'),
+          );
+        }
+
+        final userData = userSnapshot.data?.data();
+
+        final name = userData?['name']?.toString().trim() ?? '';
+
+        final username = userData?['username']?.toString().trim() ?? '';
+
+        final photoUrl = userData?['photoUrl']?.toString().trim() ?? '';
+
+        final displayName = name.isNotEmpty
+            ? name
+            : username.isNotEmpty
+            ? '@$username'
+            : 'Gapshap User';
+
+        final lastMessage = data['lastMessage']?.toString() ?? '';
+
+        final locked = _chatPinHashes.containsKey(chatId);
+
+        return ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 5,
+          ),
+          leading: CircleAvatar(
+            radius: 27,
+            backgroundImage: photoUrl.isNotEmpty
+                ? NetworkImage(photoUrl)
+                : null,
+            child: photoUrl.isEmpty ? const Icon(Icons.person, size: 28) : null,
+          ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (locked)
+                const Padding(
+                  padding: EdgeInsets.only(left: 6),
+                  child: Icon(Icons.lock, size: 16),
+                ),
+            ],
+          ),
+          subtitle: Text(
+            lastMessage.isEmpty ? 'Start a conversation' : lastMessage,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () {
+            _openChat(chatId, otherUserId);
+          },
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoadingPins) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text(
@@ -45,148 +267,110 @@ class _ChatsScreenState extends State<ChatsScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () {
-              // Search baad mein add karenge.
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            onPressed: () {
-              // Chat settings baad mein add karenge.
-            },
+            tooltip: 'New Chat',
+            onPressed: _newChat,
+            icon: const Icon(Icons.edit_outlined),
           ),
         ],
       ),
+      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: ChatService.getMyChats(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-      body: ListView.builder(
-        itemCount: chats.length,
-        itemBuilder: (context, index) {
-          final chat = chats[index];
-
-          final String chatName = chat['name'].toString();
-
-          final String? savedPin = _chatPins[chatName];
-
-          return _ChatTile(
-            name: chatName,
-            message: chat['message'].toString(),
-            time: chat['time'].toString(),
-            unread: chat['unread'] as int,
-            isLocked: savedPin != null,
-
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) {
-                    return ChatScreen(
-                      name: chatName,
-
-                      // Existing PIN ChatScreen ko bhej rahe hain.
-                      initialPin: savedPin,
-
-                      // Jab ChatScreen mein PIN set hoga,
-                      // yahan save hoga.
-                      onPinSet: (pin) {
-                        setState(() {
-                          _chatPins[chatName] = pin;
-                        });
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.error_outline, size: 50),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Unable to load chats.',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: () {
+                        setState(() {});
                       },
-
-                      // Lock remove karne ke liye.
-                      onLockRemoved: () {
-                        setState(() {
-                          _chatPins.remove(chatName);
-                        });
-                      },
-                    );
-                  },
+                      child: const Text('Retry'),
+                    ),
+                  ],
                 ),
-              );
+              ),
+            );
+          }
+
+          final chats = snapshot.data?.docs ?? [];
+
+          if (chats.isEmpty) {
+            return _EmptyChats(onNewChat: _newChat);
+          }
+
+          return ListView.separated(
+            itemCount: chats.length,
+            separatorBuilder: (_, _) => const Divider(height: 1, indent: 86),
+            itemBuilder: (context, index) {
+              return _buildChatTile(chats[index]);
             },
           );
         },
       ),
-
       floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          // New Chat baad mein add karenge.
-        },
-        child: const Icon(Icons.chat),
+        onPressed: _newChat,
+        tooltip: 'New Chat',
+        child: const Icon(Icons.chat_outlined),
       ),
     );
   }
 }
 
-class _ChatTile extends StatelessWidget {
-  final String name;
-  final String message;
-  final String time;
-  final int unread;
-  final bool isLocked;
-  final VoidCallback onTap;
+// ================================================================
+// EMPTY CHATS
+// ================================================================
 
-  const _ChatTile({
-    required this.name,
-    required this.message,
-    required this.time,
-    required this.unread,
-    required this.isLocked,
-    required this.onTap,
-  });
+class _EmptyChats extends StatelessWidget {
+  final VoidCallback onNewChat;
+
+  const _EmptyChats({required this.onNewChat});
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-
-      leading: CircleAvatar(
-        radius: 27,
-        child: Text(
-          name.substring(0, 1),
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-      ),
-
-      title: Row(
-        children: [
-          Expanded(
-            child: Text(
-              name,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(30),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.chat_bubble_outline,
+              size: 75,
+              color: Theme.of(context).colorScheme.primary,
             ),
-          ),
-
-          if (isLocked) const Icon(Icons.lock, size: 17),
-        ],
-      ),
-
-      subtitle: Text(message, maxLines: 1, overflow: TextOverflow.ellipsis),
-
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(time, style: const TextStyle(fontSize: 12)),
-
-          if (unread > 0) ...[
-            const SizedBox(height: 5),
-
-            CircleAvatar(
-              radius: 10,
-              child: Text(
-                '$unread',
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            const SizedBox(height: 18),
+            const Text(
+              'No chats yet',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Find someone on Gapshap and start your first conversation.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onNewChat,
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('New Chat'),
             ),
           ],
-        ],
+        ),
       ),
-
-      onTap: onTap,
     );
   }
 }

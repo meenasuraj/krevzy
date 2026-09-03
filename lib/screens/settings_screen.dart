@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../services/app_lock_service.dart';
 import '../services/biometric_service.dart';
+import '../services/session_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -19,6 +20,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _messageNotifications = true;
   bool _soundEnabled = true;
   bool _vibrationEnabled = true;
+  bool _isLoggingOut = false;
 
   String _appearance = 'System default';
 
@@ -51,9 +53,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
-          // =========================
-          // ACCOUNT
-          // =========================
           _sectionTitle('Account'),
 
           _SettingsTile(
@@ -83,9 +82,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
 
-          // =========================
-          // PRIVACY & SECURITY
-          // =========================
           _sectionTitle('Privacy & Security'),
 
           _SettingsSwitchTile(
@@ -148,9 +144,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.visibility_outlined,
             title: 'Privacy',
             subtitle: 'Last seen, online status, profile and more',
-            onTap: () {
-              _showPrivacySettings();
-            },
+            onTap: _showPrivacySettings,
           ),
 
           _SettingsTile(
@@ -162,9 +156,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
 
-          // =========================
-          // NOTIFICATIONS
-          // =========================
           _sectionTitle('Notifications'),
 
           _SettingsSwitchTile(
@@ -224,9 +215,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
 
-          // =========================
-          // APPEARANCE
-          // =========================
           _sectionTitle('Appearance'),
 
           _SettingsTile(
@@ -236,9 +224,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: _showAppearanceDialog,
           ),
 
-          // =========================
-          // DATA & STORAGE
-          // =========================
           _sectionTitle('Data & Storage'),
 
           _SettingsTile(
@@ -254,14 +239,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.storage_outlined,
             title: 'Storage',
             subtitle: 'Manage cached media and storage',
-            onTap: () {
-              _showStorageDialog();
-            },
+            onTap: _showStorageDialog,
           ),
 
-          // =========================
-          // HELP
-          // =========================
           _sectionTitle('Help'),
 
           _SettingsTile(
@@ -277,9 +257,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             icon: Icons.report_problem_outlined,
             title: 'Report a problem',
             subtitle: 'Tell us about an issue',
-            onTap: () {
-              _showReportDialog();
-            },
+            onTap: _showReportDialog,
           ),
 
           _SettingsTile(
@@ -291,9 +269,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             },
           ),
 
-          // =========================
-          // ABOUT
-          // =========================
           _sectionTitle('About'),
 
           _SettingsTile(
@@ -323,17 +298,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 20),
 
-          // =========================
-          // LOGOUT
-          // =========================
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: OutlinedButton.icon(
-              onPressed: _showLogoutDialog,
-              icon: const Icon(Icons.logout),
-              label: const Text(
-                'Log out',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              onPressed: _isLoggingOut ? null : _showLogoutDialog,
+              icon: _isLoggingOut
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.logout),
+              label: Text(
+                _isLoggingOut ? 'Logging out...' : 'Log out',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(50),
@@ -374,10 +352,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ============================================================
-  // SECTION TITLE
-  // ============================================================
-
   Widget _sectionTitle(String title) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
@@ -392,10 +366,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
   }
-
-  // ============================================================
-  // BIOMETRIC APP LOCK
-  // ============================================================
 
   Future<void> _toggleBiometric(bool value) async {
     if (!value) {
@@ -457,10 +427,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'You can now unlock Gapshap using $label or your App Lock PIN.',
     );
   }
-
-  // ============================================================
-  // ENABLE APP LOCK
-  // ============================================================
 
   void _showEnableAppLockDialog() {
     final pinController = TextEditingController();
@@ -540,7 +506,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 await AppLockService.enable(pin);
 
-                if (!mounted) return;
+                if (!context.mounted) return;
 
                 setState(() {
                   _appLockEnabled = true;
@@ -561,10 +527,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
-  // ============================================================
-  // DISABLE APP LOCK
-  // ============================================================
 
   void _showDisableAppLockDialog() {
     final pinController = TextEditingController();
@@ -629,6 +591,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final valid = await AppLockService.verifyPin(pin);
 
                 if (!valid) {
+                  if (!context.mounted) return;
+
                   _showMessage(
                     'Incorrect PIN',
                     'The App Lock PIN is incorrect.',
@@ -638,7 +602,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 await AppLockService.disable();
 
-                if (!mounted) return;
+                if (!context.mounted) return;
 
                 setState(() {
                   _appLockEnabled = false;
@@ -659,10 +623,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
-  // ============================================================
-  // CHANGE APP LOCK PIN
-  // ============================================================
 
   void _showChangeAppLockPinDialog() {
     final currentPinController = TextEditingController();
@@ -784,6 +744,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 final valid = await AppLockService.verifyPin(currentPin);
 
                 if (!valid) {
+                  if (!context.mounted) return;
+
                   _showMessage(
                     'Incorrect PIN',
                     'Your current App Lock PIN is incorrect.',
@@ -793,7 +755,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
                 await AppLockService.changePin(newPin);
 
-                if (!mounted) return;
+                if (!context.mounted) return;
 
                 Navigator.pop(dialogContext);
 
@@ -810,15 +772,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ============================================================
-  // PASSWORD
-  // ============================================================
-
   void _showPasswordSecurity() {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -835,7 +793,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('Change password'),
                 subtitle: const Text('Update your Gapshap password'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   _changePassword();
                 },
               ),
@@ -844,7 +802,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: const Text('Where you are logged in'),
                 subtitle: const Text('Manage active sessions'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
                   _showComingSoon('Active sessions');
                 },
               ),
@@ -870,28 +828,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: user!.email!);
 
-      if (!mounted) return;
+      if (!context.mounted) return;
 
       _showMessage(
         'Password reset email sent',
         'Check your email to create a new password.',
       );
     } catch (e) {
-      if (!mounted) return;
+      debugPrint('Password reset error: $e');
+
+      if (!context.mounted) return;
 
       _showMessage('Error', 'Unable to send password reset email.');
     }
   }
 
-  // ============================================================
-  // PRIVACY
-  // ============================================================
-
   void _showPrivacySettings() {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
-      builder: (context) {
+      builder: (sheetContext) {
         bool showOnline = true;
         bool showLastSeen = true;
         bool readReceipts = true;
@@ -954,10 +910,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ============================================================
-  // APPEARANCE
-  // ============================================================
-
   void _showAppearanceDialog() {
     showDialog(
       context: context,
@@ -1010,14 +962,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ============================================================
-  // STORAGE
-  // ============================================================
-
   void _showStorageDialog() {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: const Row(
             children: [
@@ -1033,7 +981,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
               },
               child: const Text('OK'),
             ),
@@ -1042,10 +990,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
-  // ============================================================
-  // REPORT
-  // ============================================================
 
   void _showReportDialog() {
     final controller = TextEditingController();
@@ -1066,15 +1010,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           actions: [
             TextButton(
               onPressed: () {
+                controller.dispose();
                 Navigator.pop(dialogContext);
               },
               child: const Text('Cancel'),
             ),
             FilledButton(
               onPressed: () {
+                final report = controller.text.trim();
+
+                controller.dispose();
                 Navigator.pop(dialogContext);
 
-                _showMessage('Thank you', 'Your report has been received.');
+                _showMessage(
+                  'Thank you',
+                  report.isEmpty
+                      ? 'Your report has been received.'
+                      : 'Your report has been received.',
+                );
               },
               child: const Text('Send'),
             ),
@@ -1083,10 +1036,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
-
-  // ============================================================
-  // ABOUT
-  // ============================================================
 
   void _showAboutDialog() {
     showAboutDialog(
@@ -1108,10 +1057,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ============================================================
-  // LOGOUT
-  // ============================================================
-
   void _showLogoutDialog() {
     showDialog(
       context: context,
@@ -1130,12 +1075,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () async {
                 Navigator.pop(dialogContext);
 
-                await FirebaseAuth.instance.signOut();
+                if (!context.mounted) return;
 
-                if (!mounted) return;
+                setState(() {
+                  _isLoggingOut = true;
+                });
 
-                Navigator.of(context)
-                    .pushNamedAndRemoveUntil('/', (route) => false);
+                try {
+                  await SessionService.endSession();
+                  await FirebaseAuth.instance.signOut();
+                } catch (e) {
+                  debugPrint('Logout Error: $e');
+
+                  if (!context.mounted) return;
+
+                  setState(() {
+                    _isLoggingOut = false;
+                  });
+
+                  _showMessage(
+                    'Logout failed',
+                    'Unable to logout completely. Please try again.',
+                  );
+                }
               },
               child: const Text('Log out'),
             ),
@@ -1145,14 +1107,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ============================================================
-  // COMING SOON
-  // ============================================================
-
   void _showComingSoon(String feature) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: Text(feature),
           content: Text(
@@ -1161,7 +1119,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           actions: [
             FilledButton(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
               },
               child: const Text('OK'),
             ),
@@ -1171,23 +1129,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ============================================================
-  // MESSAGE
-  // ============================================================
-
   void _showMessage(String title, String message) {
     if (!mounted) return;
 
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: Text(title),
           content: Text(message),
           actions: [
             FilledButton(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
               },
               child: const Text('OK'),
             ),
@@ -1197,10 +1151,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
-
-// ================================================================
-// SETTINGS TILE
-// ================================================================
 
 class _SettingsTile extends StatelessWidget {
   final IconData icon;
@@ -1231,10 +1181,6 @@ class _SettingsTile extends StatelessWidget {
     );
   }
 }
-
-// ================================================================
-// SETTINGS SWITCH TILE
-// ================================================================
 
 class _SettingsSwitchTile extends StatelessWidget {
   final IconData icon;

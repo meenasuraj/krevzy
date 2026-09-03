@@ -1,6 +1,7 @@
-import 'package:firebase_auth/firebase_auth.dart';
+﻿import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/session_service.dart';
 import 'home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -29,74 +30,105 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
+      await FirebaseAuth.instance
+          .signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
+      // Start Gapshap session.
+      await SessionService.startSession();
+
       if (!mounted) return;
 
-      // Login successful → Home Screen
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
+        MaterialPageRoute(
+          builder: (context) => const HomeScreen(),
+        ),
       );
     } on FirebaseAuthException catch (e) {
-      String message = 'Login failed. Please try again.';
+      debugPrint(
+        'Login Error Code: ${e.code}',
+      );
+      debugPrint(
+        'Login Error Message: ${e.message}',
+      );
+
+      if (!mounted) return;
+
+      String message =
+          'Login failed. Please try again.';
 
       switch (e.code) {
         case 'invalid-credential':
-          message = 'Email ya password galat hai.';
+          message =
+              'Email ya password galat hai.';
           break;
 
         case 'invalid-email':
-          message = 'Please enter a valid email address.';
+          message =
+              'Please enter a valid email address.';
           break;
 
         case 'user-not-found':
-          message = 'Is email se koi account nahi mila.';
+          message =
+              'Is email se koi account nahi mila.';
           break;
 
         case 'wrong-password':
-          message = 'Password galat hai.';
+          message =
+              'Password galat hai.';
           break;
 
         case 'user-disabled':
-          message = 'Ye account disabled hai.';
+          message =
+              'Ye account disabled hai.';
           break;
 
         case 'too-many-requests':
-          message = 'Too many attempts. Thodi der baad try karo.';
+          message =
+              'Too many attempts. Thodi der baad try karo.';
           break;
 
         case 'network-request-failed':
-          message = 'Internet connection check karo.';
+          message =
+              'Internet connection check karo.';
           break;
+
+        default:
+          message =
+              'Firebase Error: ${e.code}\n'
+              '${e.message ?? "Unknown error"}';
       }
 
-      print('================ LOGIN ERROR ================');
-      print('ERROR CODE: ${e.code}');
-      print('ERROR MESSAGE: ${e.message}');
-      print('=============================================');
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 5),
+        ),
+      );
     } catch (e) {
-      print('Unexpected login error: $e');
+      debugPrint(
+        'Unexpected login error: $e',
+      );
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Something went wrong: $e')));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Something went wrong: $e',
+          ),
+        ),
+      );
     }
+
+    if (!mounted) return;
+
+    setState(() {
+      _loading = false;
+    });
   }
 
   @override
@@ -109,28 +141,31 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
-
+      appBar: AppBar(
+        title: const Text('Login'),
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
-
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 450),
-
+              constraints: const BoxConstraints(
+                maxWidth: 450,
+              ),
               child: Form(
                 key: _formKey,
-
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.stretch,
                   children: [
-                    // Logo
-                    const Icon(Icons.chat_bubble_rounded, size: 70),
+                    const Icon(
+                      Icons.chat_bubble_rounded,
+                      size: 70,
+                      color: Color(0xFF7C3AED),
+                    ),
 
                     const SizedBox(height: 20),
 
-                    // Heading
                     const Text(
                       'Welcome Back 👋',
                       textAlign: TextAlign.center,
@@ -149,20 +184,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 35),
 
-                    // Email
                     TextFormField(
                       controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-
-                      decoration: const InputDecoration(
+                      keyboardType:
+                          TextInputType.emailAddress,
+                      textInputAction:
+                          TextInputAction.next,
+                      decoration:
+                          const InputDecoration(
                         labelText: 'Email',
-                        hintText: 'Enter your email',
-                        prefixIcon: Icon(Icons.email_outlined),
-                        border: OutlineInputBorder(),
+                        hintText:
+                            'Enter your email',
+                        prefixIcon: Icon(
+                          Icons.email_outlined,
+                        ),
+                        border:
+                            OutlineInputBorder(),
                       ),
-
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
+                        if (value == null ||
+                            value.trim().isEmpty) {
                           return 'Email enter karo';
                         }
 
@@ -176,37 +217,47 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 18),
 
-                    // Password
                     TextFormField(
-                      controller: _passwordController,
-
-                      obscureText: _obscurePassword,
-
-                      decoration: InputDecoration(
+                      controller:
+                          _passwordController,
+                      obscureText:
+                          _obscurePassword,
+                      textInputAction:
+                          TextInputAction.done,
+                      onFieldSubmitted: (_) {
+                        if (!_loading) {
+                          _login();
+                        }
+                      },
+                      decoration:
+                          InputDecoration(
                         labelText: 'Password',
-                        hintText: 'Enter your password',
-
-                        prefixIcon: const Icon(Icons.lock_outline),
-
-                        suffixIcon: IconButton(
+                        hintText:
+                            'Enter your password',
+                        prefixIcon:
+                            const Icon(
+                          Icons.lock_outline,
+                        ),
+                        suffixIcon:
+                            IconButton(
                           icon: Icon(
                             _obscurePassword
                                 ? Icons.visibility_off
                                 : Icons.visibility,
                           ),
-
                           onPressed: () {
                             setState(() {
-                              _obscurePassword = !_obscurePassword;
+                              _obscurePassword =
+                                  !_obscurePassword;
                             });
                           },
                         ),
-
-                        border: const OutlineInputBorder(),
+                        border:
+                            const OutlineInputBorder(),
                       ),
-
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
+                        if (value == null ||
+                            value.isEmpty) {
                           return 'Password enter karo';
                         }
 
@@ -216,104 +267,127 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 10),
 
-                    // Forgot Password
                     Align(
-                      alignment: Alignment.centerRight,
-
+                      alignment:
+                          Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                'Forgot Password next step mein add karenge.',
-                              ),
-                            ),
-                          );
-                        },
-
-                        child: const Text('Forgot Password?'),
+                        onPressed: _loading
+                            ? null
+                            : () {
+                                ScaffoldMessenger
+                                    .of(context)
+                                    .showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Forgot Password next step mein add karenge.',
+                                    ),
+                                  ),
+                                );
+                              },
+                        child: const Text(
+                          'Forgot Password?',
+                        ),
                       ),
                     ),
 
                     const SizedBox(height: 10),
 
-                    // Login Button
                     SizedBox(
                       height: 52,
-
                       child: ElevatedButton(
-                        onPressed: _loading ? null : _login,
-
+                        onPressed:
+                            _loading ? null : _login,
                         child: _loading
                             ? const SizedBox(
                                 height: 24,
                                 width: 24,
-
-                                child: CircularProgressIndicator(
+                                child:
+                                    CircularProgressIndicator(
                                   strokeWidth: 2,
                                 ),
                               )
                             : const Text(
                                 'Login',
-                                style: TextStyle(fontSize: 16),
+                                style:
+                                    TextStyle(
+                                  fontSize: 16,
+                                  fontWeight:
+                                      FontWeight.bold,
+                                ),
                               ),
                       ),
                     ),
 
                     const SizedBox(height: 25),
 
-                    // OR
                     Row(
                       children: [
-                        const Expanded(child: Divider()),
-
+                        const Expanded(
+                          child: Divider(),
+                        ),
                         Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-
+                          padding:
+                              const EdgeInsets.symmetric(
+                            horizontal: 12,
+                          ),
                           child: Text(
                             'OR',
-                            style: TextStyle(color: Colors.grey.shade600),
+                            style: TextStyle(
+                              color:
+                                  Colors.grey.shade600,
+                            ),
                           ),
                         ),
-
-                        const Expanded(child: Divider()),
+                        const Expanded(
+                          child: Divider(),
+                        ),
                       ],
                     ),
 
                     const SizedBox(height: 20),
 
-                    // Google Login
                     OutlinedButton.icon(
-                      onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Google Login next step mein add karenge.',
-                            ),
-                          ),
-                        );
-                      },
-
-                      icon: const Icon(Icons.login),
-
-                      label: const Text('Continue with Google'),
+                      onPressed: _loading
+                          ? null
+                          : () {
+                              ScaffoldMessenger
+                                  .of(context)
+                                  .showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Google Login next step mein add karenge.',
+                                  ),
+                                ),
+                              );
+                            },
+                      icon: const Icon(
+                        Icons.login,
+                      ),
+                      label: const Text(
+                        'Continue with Google',
+                      ),
                     ),
 
                     const SizedBox(height: 25),
 
-                    // Create Account
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-
+                      mainAxisAlignment:
+                          MainAxisAlignment.center,
                       children: [
-                        const Text('New to Gapshap? '),
-
+                        const Text(
+                          'New to Gapshap? ',
+                        ),
                         TextButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                          },
-
-                          child: const Text('Create Account'),
+                          onPressed: _loading
+                              ? null
+                              : () {
+                                  Navigator.pop(
+                                    context,
+                                  );
+                                },
+                          child: const Text(
+                            'Create Account',
+                          ),
                         ),
                       ],
                     ),

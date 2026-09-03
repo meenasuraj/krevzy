@@ -1,5 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../services/session_service.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -17,12 +20,14 @@ class _SignupScreenState extends State<SignupScreen> {
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore =
+      FirebaseFirestore.instance;
+
   bool _agreeToTerms = false;
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
-
-  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   @override
   void dispose() {
@@ -42,7 +47,9 @@ class _SignupScreenState extends State<SignupScreen> {
     if (!_agreeToTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please agree to the Terms & Privacy Policy'),
+          content: Text(
+            'Please agree to the Terms & Privacy Policy',
+          ),
         ),
       );
       return;
@@ -52,35 +59,100 @@ class _SignupScreenState extends State<SignupScreen> {
       _isLoading = true;
     });
 
+    User? createdUser;
+
     try {
-      // Firebase account create
-      final UserCredential userCredential = await _auth
-          .createUserWithEmailAndPassword(
-            email: _emailController.text.trim(),
-            password: _passwordController.text,
-          );
+      final name = _nameController.text.trim();
+      final username =
+          _usernameController.text.trim().toLowerCase();
+      final email = _emailController.text.trim();
 
-      // Save user's display name in Firebase Auth
-      await userCredential.user?.updateDisplayName(_nameController.text.trim());
+      // Check username availability.
+      final usernameQuery = await _firestore
+          .collection('users')
+          .where(
+            'username',
+            isEqualTo: username,
+          )
+          .limit(1)
+          .get();
 
-      // Reload user data
-      await userCredential.user?.reload();
+      if (usernameQuery.docs.isNotEmpty) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This username is already taken.',
+            ),
+          ),
+        );
+
+        setState(() {
+          _isLoading = false;
+        });
+
+        return;
+      }
+
+      // Create Firebase Authentication account.
+      final userCredential =
+          await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: _passwordController.text,
+      );
+
+      createdUser = userCredential.user;
+
+      if (createdUser == null) {
+        throw Exception(
+          'Unable to create user account.',
+        );
+      }
+
+      // Save display name in Firebase Auth.
+      await createdUser.updateDisplayName(name);
+
+      // Save user profile in Firestore.
+      // Document ID = Firebase UID.
+      await _firestore
+          .collection('users')
+          .doc(createdUser.uid)
+          .set({
+        'uid': createdUser.uid,
+        'name': name,
+        'username': username,
+        'email': email,
+        'bio': '',
+        'photoUrl': '',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      await createdUser.reload();
+
+      // Start Gapshap session.
+      await SessionService.startSession();
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Account created successfully!')),
+        const SnackBar(
+          content: Text(
+            'Account created successfully! ??',
+          ),
+        ),
       );
 
-      // Go back to previous screen
+      // User is already signed in after signup.
       Navigator.pop(context);
     } on FirebaseAuthException catch (e) {
-      // IMPORTANT:
-      // Exact Firebase error Console/SnackBar me dikhayega.
-      debugPrint('================ FIREBASE ERROR ================');
-      debugPrint('ERROR CODE: ${e.code}');
-      debugPrint('ERROR MESSAGE: ${e.message}');
-      debugPrint('=================================================');
+      debugPrint(
+        'Firebase Auth Error: ${e.code}',
+      );
+      debugPrint(
+        'Firebase Auth Message: ${e.message}',
+      );
 
       if (!mounted) return;
 
@@ -88,79 +160,122 @@ class _SignupScreenState extends State<SignupScreen> {
 
       switch (e.code) {
         case 'email-already-in-use':
-          message = 'This email is already registered.';
+          message =
+              'This email is already registered.';
           break;
 
         case 'invalid-email':
-          message = 'Please enter a valid email address.';
+          message =
+              'Please enter a valid email address.';
           break;
 
         case 'weak-password':
-          message = 'Password is too weak. Use at least 6 characters.';
+          message =
+              'Password is too weak. Use at least 6 characters.';
           break;
 
         case 'operation-not-allowed':
           message =
-              'Email/Password sign-in is not enabled in Firebase Console.';
+              'Email/Password login is not enabled in Firebase.';
           break;
 
         case 'network-request-failed':
-          message = 'Network error. Please check your internet connection.';
+          message =
+              'Network error. Please check your internet.';
           break;
 
         case 'too-many-requests':
-          message = 'Too many attempts. Please try again later.';
-          break;
-
-        case 'invalid-api-key':
-          message = 'Firebase API key is invalid.';
+          message =
+              'Too many attempts. Please try again later.';
           break;
 
         default:
-          // EXACT Firebase error for debugging
           message =
-              'Firebase Error: ${e.code}\n${e.message ?? "Unknown error"}';
+              'Firebase Error: ${e.code}\n'
+              '${e.message ?? "Unknown error"}';
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 6)),
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(seconds: 6),
+        ),
       );
-    } catch (e) {
-      debugPrint('GENERAL ERROR: $e');
+    } on FirebaseException catch (e) {
+      debugPrint(
+        'Firestore Error: ${e.code}',
+      );
+      debugPrint(
+        'Firestore Message: ${e.message}',
+      );
+
+      // Roll back Auth account if Firestore save failed.
+      if (createdUser != null) {
+        try {
+          await createdUser.delete();
+        } catch (rollbackError) {
+          debugPrint(
+            'Rollback failed: $rollbackError',
+          );
+        }
+      }
 
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Something went wrong: $e'),
+          content: Text(
+            'Unable to save profile.\n'
+            'Firestore Error: ${e.code}',
+          ),
           duration: const Duration(seconds: 6),
         ),
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+    } catch (e) {
+      debugPrint(
+        'Signup Error: $e',
+      );
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Something went wrong: $e',
+          ),
+          duration: const Duration(seconds: 6),
+        ),
+      );
     }
+
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Create Account'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('Create Account'),
+        centerTitle: true,
+      ),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 450),
+              constraints: const BoxConstraints(
+                maxWidth: 450,
+              ),
               child: Form(
                 key: _formKey,
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment:
+                      CrossAxisAlignment.stretch,
                   children: [
-                    // Logo
                     const Icon(
                       Icons.chat_bubble_rounded,
                       size: 70,
@@ -183,25 +298,33 @@ class _SignupScreenState extends State<SignupScreen> {
                     const Text(
                       'Create your account and start chatting',
                       textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.grey, fontSize: 15),
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontSize: 15,
+                      ),
                     ),
 
                     const SizedBox(height: 32),
 
-                    // Full Name
                     TextFormField(
                       controller: _nameController,
-                      textInputAction: TextInputAction.next,
+                      textInputAction:
+                          TextInputAction.next,
                       decoration: InputDecoration(
                         labelText: 'Full Name',
-                        hintText: 'Enter your full name',
-                        prefixIcon: const Icon(Icons.person_outline),
+                        hintText:
+                            'Enter your full name',
+                        prefixIcon: const Icon(
+                          Icons.person_outline,
+                        ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius:
+                              BorderRadius.circular(14),
                         ),
                       ),
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
+                        if (value == null ||
+                            value.trim().isEmpty) {
                           return 'Please enter your name';
                         }
 
@@ -215,25 +338,42 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Username
                     TextFormField(
-                      controller: _usernameController,
-                      textInputAction: TextInputAction.next,
+                      controller:
+                          _usernameController,
+                      textInputAction:
+                          TextInputAction.next,
                       decoration: InputDecoration(
                         labelText: 'Username',
-                        hintText: 'Choose a username',
-                        prefixIcon: const Icon(Icons.alternate_email),
+                        hintText:
+                            'Choose a username',
+                        prefixIcon: const Icon(
+                          Icons.alternate_email,
+                        ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius:
+                              BorderRadius.circular(14),
                         ),
                       ),
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
+                        if (value == null ||
+                            value.trim().isEmpty) {
                           return 'Please enter a username';
                         }
 
-                        if (value.trim().length < 3) {
+                        final username =
+                            value.trim().toLowerCase();
+
+                        if (username.length < 3) {
                           return 'Username must be at least 3 characters';
+                        }
+
+                        final regex = RegExp(
+                          r'^[a-z0-9._]+$',
+                        );
+
+                        if (!regex.hasMatch(username)) {
+                          return 'Use only letters, numbers, . and _';
                         }
 
                         return null;
@@ -242,31 +382,37 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Email
                     TextFormField(
                       controller: _emailController,
-                      keyboardType: TextInputType.emailAddress,
-                      textInputAction: TextInputAction.next,
+                      keyboardType:
+                          TextInputType.emailAddress,
+                      textInputAction:
+                          TextInputAction.next,
                       decoration: InputDecoration(
                         labelText: 'Email',
-                        hintText: 'Enter your email',
-                        prefixIcon: const Icon(Icons.email_outlined),
+                        hintText:
+                            'Enter your email',
+                        prefixIcon: const Icon(
+                          Icons.email_outlined,
+                        ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius:
+                              BorderRadius.circular(14),
                         ),
                       ),
                       validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
+                        if (value == null ||
+                            value.trim().isEmpty) {
                           return 'Please enter your email';
                         }
 
-                        final email = value.trim();
-
-                        final emailRegex = RegExp(
+                        final regex = RegExp(
                           r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
                         );
 
-                        if (!emailRegex.hasMatch(email)) {
+                        if (!regex.hasMatch(
+                          value.trim(),
+                        )) {
                           return 'Please enter a valid email';
                         }
 
@@ -276,19 +422,25 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Password
                     TextFormField(
-                      controller: _passwordController,
-                      obscureText: _obscurePassword,
-                      textInputAction: TextInputAction.next,
+                      controller:
+                          _passwordController,
+                      obscureText:
+                          _obscurePassword,
+                      textInputAction:
+                          TextInputAction.next,
                       decoration: InputDecoration(
                         labelText: 'Password',
-                        hintText: 'Create a password',
-                        prefixIcon: const Icon(Icons.lock_outline),
+                        hintText:
+                            'Create a password',
+                        prefixIcon: const Icon(
+                          Icons.lock_outline,
+                        ),
                         suffixIcon: IconButton(
                           onPressed: () {
                             setState(() {
-                              _obscurePassword = !_obscurePassword;
+                              _obscurePassword =
+                                  !_obscurePassword;
                             });
                           },
                           icon: Icon(
@@ -298,11 +450,13 @@ class _SignupScreenState extends State<SignupScreen> {
                           ),
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius:
+                              BorderRadius.circular(14),
                         ),
                       ),
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
+                        if (value == null ||
+                            value.isEmpty) {
                           return 'Please enter a password';
                         }
 
@@ -316,20 +470,26 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Confirm Password
                     TextFormField(
-                      controller: _confirmPasswordController,
-                      obscureText: _obscureConfirmPassword,
-                      textInputAction: TextInputAction.done,
+                      controller:
+                          _confirmPasswordController,
+                      obscureText:
+                          _obscureConfirmPassword,
+                      textInputAction:
+                          TextInputAction.done,
                       onFieldSubmitted: (_) {
                         if (!_isLoading) {
                           createAccount();
                         }
                       },
                       decoration: InputDecoration(
-                        labelText: 'Confirm Password',
-                        hintText: 'Enter password again',
-                        prefixIcon: const Icon(Icons.lock_reset_outlined),
+                        labelText:
+                            'Confirm Password',
+                        hintText:
+                            'Enter password again',
+                        prefixIcon: const Icon(
+                          Icons.lock_reset_outlined,
+                        ),
                         suffixIcon: IconButton(
                           onPressed: () {
                             setState(() {
@@ -344,15 +504,18 @@ class _SignupScreenState extends State<SignupScreen> {
                           ),
                         ),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
+                          borderRadius:
+                              BorderRadius.circular(14),
                         ),
                       ),
                       validator: (value) {
-                        if (value == null || value.isEmpty) {
+                        if (value == null ||
+                            value.isEmpty) {
                           return 'Please confirm your password';
                         }
 
-                        if (value != _passwordController.text) {
+                        if (value !=
+                            _passwordController.text) {
                           return 'Passwords do not match';
                         }
 
@@ -362,24 +525,28 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Terms
                     Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
                       children: [
                         Checkbox(
                           value: _agreeToTerms,
                           onChanged: (value) {
                             setState(() {
-                              _agreeToTerms = value ?? false;
+                              _agreeToTerms =
+                                  value ?? false;
                             });
                           },
                         ),
                         const Expanded(
                           child: Padding(
-                            padding: EdgeInsets.only(top: 12),
+                            padding:
+                                EdgeInsets.only(top: 12),
                             child: Text(
                               'I agree to the Terms of Service and Privacy Policy',
-                              style: TextStyle(fontSize: 14),
+                              style: TextStyle(
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ),
@@ -388,23 +555,31 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     const SizedBox(height: 20),
 
-                    // Create Account Button
                     SizedBox(
                       height: 54,
                       child: ElevatedButton(
-                        onPressed: _isLoading ? null : createAccount,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF7C3AED),
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(14),
+                        onPressed:
+                            _isLoading
+                                ? null
+                                : createAccount,
+                        style:
+                            ElevatedButton.styleFrom(
+                          backgroundColor:
+                              const Color(0xFF7C3AED),
+                          foregroundColor:
+                              Colors.white,
+                          shape:
+                              RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(14),
                           ),
                         ),
                         child: _isLoading
                             ? const SizedBox(
                                 height: 24,
                                 width: 24,
-                                child: CircularProgressIndicator(
+                                child:
+                                    CircularProgressIndicator(
                                   strokeWidth: 2.5,
                                   color: Colors.white,
                                 ),
@@ -413,7 +588,8 @@ class _SignupScreenState extends State<SignupScreen> {
                                 'Create Account',
                                 style: TextStyle(
                                   fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight:
+                                      FontWeight.bold,
                                 ),
                               ),
                       ),
@@ -421,23 +597,30 @@ class _SignupScreenState extends State<SignupScreen> {
 
                     const SizedBox(height: 24),
 
-                    // Login
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment:
+                          MainAxisAlignment.center,
                       children: [
                         const Text(
                           'Already have an account? ',
-                          style: TextStyle(color: Colors.grey),
+                          style: TextStyle(
+                            color: Colors.grey,
+                          ),
                         ),
                         TextButton(
                           onPressed: _isLoading
                               ? null
                               : () {
-                                  Navigator.pop(context);
+                                  Navigator.pop(
+                                    context,
+                                  );
                                 },
                           child: const Text(
                             'Login',
-                            style: TextStyle(fontWeight: FontWeight.bold),
+                            style: TextStyle(
+                              fontWeight:
+                                  FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],

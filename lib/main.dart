@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +17,10 @@ Future<void> main() async {
 
   runApp(const GapshapApp());
 }
+
+// ============================================================
+// GAPSHAP APP
+// ============================================================
 
 class GapshapApp extends StatelessWidget {
   const GapshapApp({super.key});
@@ -34,6 +40,10 @@ class GapshapApp extends StatelessWidget {
   }
 }
 
+// ============================================================
+// APP GATE
+// ============================================================
+
 class AppGate extends StatefulWidget {
   const AppGate({super.key});
 
@@ -42,6 +52,8 @@ class AppGate extends StatefulWidget {
 }
 
 class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
+  StreamSubscription<User?>? _authSubscription;
+
   bool _isLoading = true;
   bool _appLockEnabled = false;
   bool _isUnlocked = false;
@@ -54,18 +66,20 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addObserver(this);
 
-    _checkAppState();
+    _listenToAuthState();
   }
 
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
+  // ==========================================================
+  // FIREBASE AUTH STATE
+  // ==========================================================
+
+  void _listenToAuthState() {
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen(
+      _handleAuthStateChanged,
+    );
   }
 
-  Future<void> _checkAppState() async {
-    final user = FirebaseAuth.instance.currentUser;
-
+  Future<void> _handleAuthStateChanged(User? user) async {
     if (user == null) {
       if (!mounted) return;
 
@@ -78,6 +92,20 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
       return;
     }
 
+    await _loadUserAppState(user);
+  }
+
+  // ==========================================================
+  // LOAD USER APP STATE
+  // ==========================================================
+
+  Future<void> _loadUserAppState(User user) async {
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = true;
+    });
+
     final enabled = await AppLockService.isEnabled();
 
     if (!mounted) return;
@@ -85,19 +113,25 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
     setState(() {
       _isLoading = false;
       _appLockEnabled = enabled;
+
+      // If App Lock is enabled, require unlock.
+      // Otherwise go directly to Home.
       _isUnlocked = !enabled;
     });
   }
+
+  // ==========================================================
+  // APP LIFECYCLE
+  // ==========================================================
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
 
     final previousState = _lastLifecycleState;
+
     _lastLifecycleState = state;
 
-    // App background / inactive hone ke baad
-    // foreground mein aane par App Lock lagao.
     if (state == AppLifecycleState.resumed &&
         previousState != null &&
         previousState != AppLifecycleState.resumed) {
@@ -105,10 +139,19 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
     }
   }
 
+  // ==========================================================
+  // LOCK WHEN APP RESUMES
+  // ==========================================================
+
   Future<void> _lockOnResume() async {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user == null) {
+      return;
+    }
+
+    // Don't unnecessarily lock while AppGate is loading.
+    if (_isLoading) {
       return;
     }
 
@@ -124,6 +167,10 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
     }
   }
 
+  // ==========================================================
+  // APP UNLOCKED
+  // ==========================================================
+
   void _handleUnlocked() {
     if (!mounted) return;
 
@@ -132,21 +179,58 @@ class _AppGateState extends State<AppGate> with WidgetsBindingObserver {
     });
   }
 
+  // ==========================================================
+  // DISPOSE
+  // ==========================================================
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+
+    _authSubscription?.cancel();
+
+    super.dispose();
+  }
+
+  // ==========================================================
+  // BUILD
+  // ==========================================================
+
   @override
   Widget build(BuildContext context) {
+    // --------------------------------------------------------
+    // Loading
+    // --------------------------------------------------------
+
     if (_isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    // --------------------------------------------------------
+    // Firebase Auth User
+    // --------------------------------------------------------
+
     final user = FirebaseAuth.instance.currentUser;
+
+    // --------------------------------------------------------
+    // Not logged in
+    // --------------------------------------------------------
 
     if (user == null) {
       return const WelcomeScreen();
     }
 
+    // --------------------------------------------------------
+    // App Lock
+    // --------------------------------------------------------
+
     if (_appLockEnabled && !_isUnlocked) {
       return AppLockScreen(onUnlocked: _handleUnlocked);
     }
+
+    // --------------------------------------------------------
+    // Logged in + unlocked
+    // --------------------------------------------------------
 
     return const HomeScreen();
   }

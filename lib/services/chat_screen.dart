@@ -1,680 +1,139 @@
-import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-import '../services/chat_lock_service.dart';
+class ChatService {
+  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-class ChatScreen extends StatefulWidget {
-  final String name;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // Parent screen se saved PIN hash receive hoga.
-  final String? initialPinHash;
+  // ============================================================
+  // CURRENT USER
+  // ============================================================
 
-  // PIN set hone par parent ko hash milega.
-  final Future<void> Function(String pinHash) onPinSet;
+  static String get currentUserId {
+    final user = _auth.currentUser;
 
-  // Lock remove hone par parent ko notify karega.
-  final Future<void> Function() onLockRemoved;
-
-  const ChatScreen({
-    super.key,
-    required this.name,
-    this.initialPinHash,
-    required this.onPinSet,
-    required this.onLockRemoved,
-  });
-
-  @override
-  State<ChatScreen> createState() => _ChatScreenState();
-}
-
-class _ChatScreenState extends State<ChatScreen> {
-  String? _chatPinHash;
-
-  bool _isChatLocked = false;
-
-  bool _isUnlocked = true;
-
-  final TextEditingController _messageController = TextEditingController();
-
-  final List<Map<String, dynamic>> _messages = [
-    {'text': 'Hello 👋', 'isMe': false, 'time': '10:30 AM'},
-    {'text': 'Hello! Kaise ho?', 'isMe': true, 'time': '10:31 AM'},
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-
-    _chatPinHash = widget.initialPinHash;
-
-    _isChatLocked = widget.initialPinHash != null;
-
-    _isUnlocked = widget.initialPinHash == null;
-
-    if (_isChatLocked) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          _showUnlockDialog();
-        }
-      });
+    if (user == null) {
+      throw Exception('User is not logged in.');
     }
-  }
 
-  @override
-  void dispose() {
-    _messageController.dispose();
-    super.dispose();
+    return user.uid;
   }
 
   // ============================================================
-  // BUILD
+  // CREATE OR GET CHAT
   // ============================================================
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              child: Text(
-                widget.name.substring(0, 1),
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
+  static Future<String> createOrGetChat({required String otherUserId}) async {
+    final currentUser = currentUserId;
 
-            const SizedBox(width: 10),
+    if (currentUser == otherUserId) {
+      throw Exception('You cannot chat with yourself.');
+    }
 
-            Expanded(
-              child: Text(
-                widget.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-            ),
+    // ----------------------------------------------------------
+    // Check whether chat already exists
+    // ----------------------------------------------------------
 
-            if (_isChatLocked) const Icon(Icons.lock, size: 19),
-          ],
-        ),
+    final chatsSnapshot = await _firestore
+        .collection('chats')
+        .where('participants', arrayContains: currentUser)
+        .get();
 
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.videocam),
-            onPressed: () {
-              _showComingSoon('Video call');
-            },
-          ),
+    for (final doc in chatsSnapshot.docs) {
+      final data = doc.data();
 
-          IconButton(
-            icon: const Icon(Icons.call),
-            onPressed: () {
-              _showComingSoon('Voice call');
-            },
-          ),
+      final participants = List<String>.from(data['participants'] ?? []);
 
-          PopupMenuButton<String>(
-            onSelected: (value) {
-              if (value == 'lock') {
-                if (_isChatLocked) {
-                  _showLockAlreadyEnabled();
-                } else {
-                  _showSetPinDialog();
-                }
-              }
+      if (participants.length == 2 && participants.contains(otherUserId)) {
+        return doc.id;
+      }
+    }
 
-              if (value == 'unlock') {
-                _showRemoveLockDialog();
-              }
-            },
+    // ----------------------------------------------------------
+    // Create new chat
+    // ----------------------------------------------------------
 
-            itemBuilder: (context) {
-              return [
-                PopupMenuItem<String>(
-                  value: 'lock',
-                  child: Row(
-                    children: [
-                      Icon(_isChatLocked ? Icons.lock : Icons.lock_outline),
-                      const SizedBox(width: 12),
-                      Text(_isChatLocked ? 'Chat Locked' : 'Chat Lock'),
-                    ],
-                  ),
-                ),
+    final chatRef = await _firestore.collection('chats').add({
+      'participants': [currentUser, otherUserId],
+      'lastMessage': '',
+      'lastMessageTime': FieldValue.serverTimestamp(),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
-                if (_isChatLocked)
-                  const PopupMenuItem<String>(
-                    value: 'unlock',
-                    child: Row(
-                      children: [
-                        Icon(Icons.lock_open),
-                        SizedBox(width: 12),
-                        Text('Remove Chat Lock'),
-                      ],
-                    ),
-                  ),
-              ];
-            },
-          ),
-        ],
-      ),
-
-      body: _isChatLocked && !_isUnlocked
-          ? _buildLockedView()
-          : _buildChatView(),
-    );
+    return chatRef.id;
   }
 
   // ============================================================
-  // LOCKED VIEW
+  // MY CHATS
   // ============================================================
 
-  Widget _buildLockedView() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(30),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.lock, size: 80),
-
-            const SizedBox(height: 20),
-
-            const Text(
-              'This chat is locked',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-            ),
-
-            const SizedBox(height: 10),
-
-            Text(
-              'Enter your chat PIN to open ${widget.name} chat.',
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 15),
-            ),
-
-            const SizedBox(height: 25),
-
-            ElevatedButton.icon(
-              onPressed: _showUnlockDialog,
-              icon: const Icon(Icons.lock_open),
-              label: const Text('Unlock Chat'),
-            ),
-          ],
-        ),
-      ),
-    );
+  static Stream<QuerySnapshot<Map<String, dynamic>>> getMyChats() {
+    return _firestore
+        .collection('chats')
+        .where('participants', arrayContains: currentUserId)
+        .orderBy('lastMessageTime', descending: true)
+        .snapshots();
   }
 
   // ============================================================
-  // CHAT VIEW
+  // GET ONE CHAT
   // ============================================================
 
-  Widget _buildChatView() {
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _messages.length,
-            itemBuilder: (context, index) {
-              final message = _messages[index];
-
-              final bool isMe = message['isMe'] as bool;
-
-              return Align(
-                alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 15,
-                    vertical: 10,
-                  ),
-                  constraints: const BoxConstraints(maxWidth: 280),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(18),
-                    color: isMe
-                        ? Theme.of(context).colorScheme.primaryContainer
-                        : Theme.of(context).colorScheme.surfaceContainerHighest,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: isMe
-                        ? CrossAxisAlignment.end
-                        : CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        message['text'].toString(),
-                        style: const TextStyle(fontSize: 16),
-                      ),
-
-                      const SizedBox(height: 4),
-
-                      Text(
-                        message['time'].toString(),
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-
-        _buildMessageInput(),
-      ],
-    );
+  static Future<DocumentSnapshot<Map<String, dynamic>>> getChat(String chatId) {
+    return _firestore.collection('chats').doc(chatId).get();
   }
 
   // ============================================================
-  // MESSAGE INPUT
+  // MESSAGES
   // ============================================================
 
-  Widget _buildMessageInput() {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(10, 5, 10, 8),
-        child: Row(
-          children: [
-            IconButton(
-              onPressed: () {
-                _showComingSoon('Attachment');
-              },
-              icon: const Icon(Icons.add),
-            ),
-
-            Expanded(
-              child: TextField(
-                controller: _messageController,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: InputDecoration(
-                  hintText: 'Message...',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(25),
-                  ),
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 10,
-                  ),
-                ),
-              ),
-            ),
-
-            const SizedBox(width: 5),
-
-            CircleAvatar(
-              child: IconButton(
-                icon: const Icon(Icons.send),
-                onPressed: _sendMessage,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+  static Stream<QuerySnapshot<Map<String, dynamic>>> getMessages(
+    String chatId,
+  ) {
+    return _firestore
+        .collection('chats')
+        .doc(chatId)
+        .collection('messages')
+        .orderBy('timestamp', descending: false)
+        .snapshots();
   }
 
   // ============================================================
   // SEND MESSAGE
   // ============================================================
 
-  void _sendMessage() {
-    final text = _messageController.text.trim();
+  static Future<void> sendMessage({
+    required String chatId,
+    required String text,
+  }) async {
+    final cleanText = text.trim();
 
-    if (text.isEmpty) {
+    if (cleanText.isEmpty) {
       return;
     }
 
-    setState(() {
-      _messages.add({'text': text, 'isMe': true, 'time': _currentTime()});
+    final userId = currentUserId;
+
+    final chatRef = _firestore.collection('chats').doc(chatId);
+
+    // ----------------------------------------------------------
+    // Add message
+    // ----------------------------------------------------------
+
+    await chatRef.collection('messages').add({
+      'senderId': userId,
+      'text': cleanText,
+      'timestamp': FieldValue.serverTimestamp(),
     });
 
-    _messageController.clear();
-  }
+    // ----------------------------------------------------------
+    // Update chat preview
+    // ----------------------------------------------------------
 
-  String _currentTime() {
-    final now = TimeOfDay.now();
-
-    return now.format(context);
-  }
-
-  // ============================================================
-  // SET PIN
-  // ============================================================
-
-  void _showSetPinDialog() {
-    final pinController = TextEditingController();
-    final confirmController = TextEditingController();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        String? errorText;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.lock),
-                  SizedBox(width: 10),
-                  Text('Set Chat PIN'),
-                ],
-              ),
-
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Create a separate PIN for this chat.'),
-
-                  const SizedBox(height: 20),
-
-                  TextField(
-                    controller: pinController,
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    maxLength: 6,
-                    decoration: const InputDecoration(
-                      labelText: 'Enter PIN',
-                      hintText: '4-6 digits',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  TextField(
-                    controller: confirmController,
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    maxLength: 6,
-                    decoration: const InputDecoration(
-                      labelText: 'Confirm PIN',
-                      hintText: 'Enter PIN again',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-
-                  if (errorText != null) ...[
-                    const SizedBox(height: 10),
-
-                    Text(
-                      errorText!,
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text('Cancel'),
-                ),
-
-                ElevatedButton(
-                  onPressed: () async {
-                    final pin = pinController.text.trim();
-
-                    final confirmPin = confirmController.text.trim();
-
-                    if (pin.length < 4 || pin.length > 6) {
-                      setDialogState(() {
-                        errorText = 'PIN must be 4-6 digits.';
-                      });
-                      return;
-                    }
-
-                    if (!RegExp(r'^\d+$').hasMatch(pin)) {
-                      setDialogState(() {
-                        errorText = 'PIN can contain digits only.';
-                      });
-                      return;
-                    }
-
-                    if (pin != confirmPin) {
-                      setDialogState(() {
-                        errorText = 'PINs do not match.';
-                      });
-                      return;
-                    }
-
-                    final pinHash = ChatLockService.hashPin(pin);
-
-                    setState(() {
-                      _chatPinHash = pinHash;
-                      _isChatLocked = true;
-                      _isUnlocked = false;
-                    });
-
-                    await widget.onPinSet(pinHash);
-
-                    if (!mounted) {
-                      return;
-                    }
-
-                    Navigator.pop(dialogContext);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Chat locked successfully 🔒'),
-                      ),
-                    );
-                  },
-                  child: const Text('Set PIN'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // ============================================================
-  // UNLOCK CHAT
-  // ============================================================
-
-  void _showUnlockDialog() {
-    final pinController = TextEditingController();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        String? errorText;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Row(
-                children: [
-                  Icon(Icons.lock),
-                  SizedBox(width: 10),
-                  Text('Chat Locked'),
-                ],
-              ),
-
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Enter PIN to open ${widget.name} chat.'),
-
-                  const SizedBox(height: 20),
-
-                  TextField(
-                    controller: pinController,
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    maxLength: 6,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      labelText: 'Chat PIN',
-                      border: const OutlineInputBorder(),
-                      errorText: errorText,
-                    ),
-                  ),
-                ],
-              ),
-
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text('Cancel'),
-                ),
-
-                ElevatedButton(
-                  onPressed: () {
-                    final enteredPin = pinController.text.trim();
-
-                    final enteredHash = ChatLockService.hashPin(enteredPin);
-
-                    if (enteredHash == _chatPinHash) {
-                      setState(() {
-                        _isUnlocked = true;
-                      });
-
-                      Navigator.pop(dialogContext);
-                    } else {
-                      setDialogState(() {
-                        errorText = 'Wrong PIN';
-                      });
-                    }
-                  },
-                  child: const Text('Unlock'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // ============================================================
-  // REMOVE LOCK
-  // ============================================================
-
-  void _showRemoveLockDialog() {
-    final pinController = TextEditingController();
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        String? errorText;
-
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: const Text('Remove Chat Lock'),
-
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Enter your current PIN to remove the lock.'),
-
-                  const SizedBox(height: 20),
-
-                  TextField(
-                    controller: pinController,
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    maxLength: 6,
-                    decoration: InputDecoration(
-                      labelText: 'Current PIN',
-                      border: const OutlineInputBorder(),
-                      errorText: errorText,
-                    ),
-                  ),
-                ],
-              ),
-
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                  },
-                  child: const Text('Cancel'),
-                ),
-
-                ElevatedButton(
-                  onPressed: () async {
-                    final enteredPin = pinController.text.trim();
-
-                    final enteredHash = ChatLockService.hashPin(enteredPin);
-
-                    if (enteredHash == _chatPinHash) {
-                      setState(() {
-                        _chatPinHash = null;
-                        _isChatLocked = false;
-                        _isUnlocked = true;
-                      });
-
-                      await widget.onLockRemoved();
-
-                      if (!mounted) {
-                        return;
-                      }
-
-                      Navigator.pop(dialogContext);
-
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Chat lock removed')),
-                      );
-                    } else {
-                      setDialogState(() {
-                        errorText = 'Wrong PIN';
-                      });
-                    }
-                  },
-                  child: const Text('Remove Lock'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-  }
-
-  // ============================================================
-  // ALREADY LOCKED
-  // ============================================================
-
-  void _showLockAlreadyEnabled() {
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Chat Already Locked 🔒'),
-          content: const Text('This chat already has a PIN.'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-              },
-              child: const Text('OK'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  // ============================================================
-  // COMING SOON
-  // ============================================================
-
-  void _showComingSoon(String feature) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('$feature coming soon')));
+    await chatRef.update({
+      'lastMessage': cleanText,
+      'lastMessageTime': FieldValue.serverTimestamp(),
+    });
   }
 }
