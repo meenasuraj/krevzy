@@ -46,27 +46,32 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBmhlY2R74marpHCTvkEoyp-SwLxhHbZDc',
-    appId: '1:619275381651:web:0bbc0ff1fbfdcd56bf9666',
-    messagingSenderId: '619275381651',
-    projectId: 'gapshap-app-2026',
-    authDomain: 'gapshap-app-2026.firebaseapp.com',
-    storageBucket: 'gapshap-app-2026.firebasestorage.app',
+    apiKey: 'AIzaSyBqXG4c57omB3UbrJUZEpuSAEppNvLSwvU',
+    appId: '1:465805150366:web:4a6a363562468ef39ad38f',
+    messagingSenderId: '465805150366',
+    projectId: 'gapshap-app-9901',
+    authDomain: 'gapshap-app-9901.firebaseapp.com',
+    databaseURL: 'https://gapshap-app-9901-default-rtdb.firebaseio.com',
+    storageBucket: 'gapshap-app-9901.firebasestorage.app',
+    measurementId: 'G-S9KL34CT65',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyCz3o1WIgZUwu5wQYQtWAi9saWztgEYTm8',
-    appId: '1:619275381651:android:4c8a7a936d6f890fbf9666',
-    messagingSenderId: '619275381651',
-    projectId: 'gapshap-app-2026',
-    storageBucket: 'gapshap-app-2026.firebasestorage.app',
+    apiKey: 'AIzaSyDfxZfFf_MS1D9JcFbcESKs63jH67fGwxM',
+    appId: '1:465805150366:android:5165563c71fb2b5c9ad38f',
+    messagingSenderId: '465805150366',
+    projectId: 'gapshap-app-9901',
+    databaseURL: 'https://gapshap-app-9901-default-rtdb.firebaseio.com',
+    storageBucket: 'gapshap-app-9901.firebasestorage.app',
   );
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyD3JDA8PTyIFrsRBjsJ7TTdm4c22czPfNc',
-    appId: '1:619275381651:ios:618cd20013860522bf9666',
-    messagingSenderId: '619275381651',
-    projectId: 'gapshap-app-2026',
-    storageBucket: 'gapshap-app-2026.firebasestorage.app',
+    apiKey: 'AIzaSyCtlxnMttEviAKCLqZ1Ib4qc1DwT0zb4pQ',
+    appId: '1:465805150366:ios:f2ac4a6a992698279ad38f',
+    messagingSenderId: '465805150366',
+    projectId: 'gapshap-app-9901',
+    databaseURL: 'https://gapshap-app-9901-default-rtdb.firebaseio.com',
+    storageBucket: 'gapshap-app-9901.firebasestorage.app',
+    iosClientId: '465805150366-qmi5sgdm9s34db9m6s2lf3m7stgrkqbv.apps.googleusercontent.com',
     iosBundleId: 'com.example.gapshap',
   );
 }

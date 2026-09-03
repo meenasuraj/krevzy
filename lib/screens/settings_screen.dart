@@ -1,6 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/app_lock_service.dart';
+import '../services/biometric_service.dart';
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
@@ -10,6 +13,7 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _appLockEnabled = false;
+  bool _biometricEnabled = false;
   bool _chatLockEnabled = true;
   bool _notificationsEnabled = true;
   bool _messageNotifications = true;
@@ -17,6 +21,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _vibrationEnabled = true;
 
   String _appearance = 'System default';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAppLockState();
+  }
+
+  Future<void> _loadAppLockState() async {
+    final enabled = await AppLockService.isEnabled();
+    final biometricEnabled = await AppLockService.isBiometricEnabled();
+
+    if (!mounted) return;
+
+    setState(() {
+      _appLockEnabled = enabled;
+      _biometricEnabled = enabled && biometricEnabled;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +103,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
               }
             },
           ),
+
+          if (_appLockEnabled)
+            _SettingsTile(
+              icon: Icons.password_outlined,
+              title: 'Change App Lock PIN',
+              subtitle: 'Change your current App Lock PIN',
+              onTap: _showChangeAppLockPinDialog,
+            ),
+
+          if (_appLockEnabled)
+            _SettingsSwitchTile(
+              icon: Icons.fingerprint,
+              title: 'Biometric App Lock',
+              subtitle: _biometricEnabled
+                  ? 'Use Fingerprint or Face ID to unlock'
+                  : 'Use Fingerprint or Face ID to unlock Gapshap',
+              value: _biometricEnabled,
+              onChanged: _toggleBiometric,
+            ),
 
           _SettingsSwitchTile(
             icon: Icons.chat_outlined,
@@ -353,7 +394,72 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ============================================================
-  // APP LOCK
+  // BIOMETRIC APP LOCK
+  // ============================================================
+
+  Future<void> _toggleBiometric(bool value) async {
+    if (!value) {
+      await AppLockService.setBiometricEnabled(false);
+
+      if (!mounted) return;
+
+      setState(() {
+        _biometricEnabled = false;
+      });
+
+      _showMessage(
+        'Biometric App Lock disabled',
+        'You can still unlock Gapshap using your App Lock PIN.',
+      );
+
+      return;
+    }
+
+    final available = await BiometricService.isAvailable();
+
+    if (!mounted) return;
+
+    if (!available) {
+      _showMessage(
+        'Biometric authentication unavailable',
+        'No supported Fingerprint or Face authentication is available on this device. '
+            'Make sure a biometric method is set up in your device security settings.',
+      );
+      return;
+    }
+
+    final authenticated = await BiometricService.authenticate();
+
+    if (!mounted) return;
+
+    if (!authenticated) {
+      _showMessage(
+        'Biometric verification cancelled',
+        'Biometric App Lock was not enabled.',
+      );
+      return;
+    }
+
+    await AppLockService.setBiometricEnabled(true);
+
+    if (!mounted) return;
+
+    setState(() {
+      _biometricEnabled = true;
+    });
+
+    final label = await BiometricService.getBiometricLabel();
+
+    if (!mounted) return;
+
+    _showMessage(
+      'Biometric App Lock enabled',
+      'You can now unlock Gapshap using $label or your App Lock PIN.',
+    );
+  }
+
+  // ============================================================
+  // ENABLE APP LOCK
   // ============================================================
 
   void _showEnableAppLockDialog() {
@@ -371,36 +477,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
               Text('Enable App Lock'),
             ],
           ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('Create a PIN to protect the entire Gapshap app.'),
-              const SizedBox(height: 18),
-              TextField(
-                controller: pinController,
-                keyboardType: TextInputType.number,
-                obscureText: true,
-                maxLength: 6,
-                decoration: const InputDecoration(
-                  labelText: 'App Lock PIN',
-                  hintText: '4–6 digits',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock_outline),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Create a PIN to protect the entire Gapshap app.'),
+                const SizedBox(height: 18),
+                TextField(
+                  controller: pinController,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'App Lock PIN',
+                    hintText: '4–6 digits',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: confirmController,
-                keyboardType: TextInputType.number,
-                obscureText: true,
-                maxLength: 6,
-                decoration: const InputDecoration(
-                  labelText: 'Confirm PIN',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.lock_reset_outlined),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: confirmController,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm PIN',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock_reset_outlined),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -410,11 +518,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () {
+              onPressed: () async {
                 final pin = pinController.text.trim();
                 final confirm = confirmController.text.trim();
 
-                if (pin.length < 4 || pin.length > 6) {
+                if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
                   _showMessage(
                     'Invalid PIN',
                     'PIN must contain 4 to 6 digits.',
@@ -430,8 +538,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   return;
                 }
 
+                await AppLockService.enable(pin);
+
+                if (!mounted) return;
+
                 setState(() {
                   _appLockEnabled = true;
+                  _biometricEnabled = false;
                 });
 
                 Navigator.pop(dialogContext);
@@ -449,32 +562,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // ============================================================
+  // DISABLE APP LOCK
+  // ============================================================
+
   void _showDisableAppLockDialog() {
+    final pinController = TextEditingController();
+
     showDialog(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Disable App Lock?'),
-          content: const Text(
-            'Are you sure you want to remove App Lock from Gapshap?',
+          title: const Row(
+            children: [
+              Icon(Icons.lock_open_outlined),
+              SizedBox(width: 10),
+              Text('Disable App Lock'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Enter your current App Lock PIN to disable App Lock.',
+              ),
+              const SizedBox(height: 18),
+              TextField(
+                controller: pinController,
+                keyboardType: TextInputType.number,
+                obscureText: true,
+                maxLength: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Current PIN',
+                  hintText: '4–6 digits',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.lock_outline),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.pop(dialogContext);
-                setState(() {
-                  _appLockEnabled = true;
-                });
+
+                if (mounted) {
+                  setState(() {
+                    _appLockEnabled = true;
+                  });
+                }
               },
               child: const Text('Cancel'),
             ),
             FilledButton(
-              onPressed: () {
-                Navigator.pop(dialogContext);
+              onPressed: () async {
+                final pin = pinController.text.trim();
+
+                if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
+                  _showMessage(
+                    'Invalid PIN',
+                    'Enter your 4 to 6 digit App Lock PIN.',
+                  );
+                  return;
+                }
+
+                final valid = await AppLockService.verifyPin(pin);
+
+                if (!valid) {
+                  _showMessage(
+                    'Incorrect PIN',
+                    'The App Lock PIN is incorrect.',
+                  );
+                  return;
+                }
+
+                await AppLockService.disable();
+
+                if (!mounted) return;
 
                 setState(() {
                   _appLockEnabled = false;
+                  _biometricEnabled = false;
                 });
+
+                Navigator.pop(dialogContext);
 
                 _showMessage(
                   'App Lock disabled',
@@ -482,6 +653,156 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 );
               },
               child: const Text('Disable'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // CHANGE APP LOCK PIN
+  // ============================================================
+
+  void _showChangeAppLockPinDialog() {
+    final currentPinController = TextEditingController();
+    final newPinController = TextEditingController();
+    final confirmPinController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.password_outlined),
+              SizedBox(width: 10),
+              Text('Change App Lock PIN'),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text('Enter your current PIN and create a new PIN.'),
+                const SizedBox(height: 18),
+                TextField(
+                  controller: currentPinController,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'Current PIN',
+                    hintText: '4–6 digits',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock_outline),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: newPinController,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'New PIN',
+                    hintText: '4–6 digits',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.password_outlined),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: confirmPinController,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 6,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm New PIN',
+                    border: OutlineInputBorder(),
+                    prefixIcon: Icon(Icons.lock_reset_outlined),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final currentPin = currentPinController.text.trim();
+                final newPin = newPinController.text.trim();
+                final confirmPin = confirmPinController.text.trim();
+
+                final pinRegex = RegExp(r'^\d{4,6}$');
+
+                if (!pinRegex.hasMatch(currentPin)) {
+                  _showMessage(
+                    'Invalid PIN',
+                    'Enter your current 4 to 6 digit PIN.',
+                  );
+                  return;
+                }
+
+                if (!pinRegex.hasMatch(newPin)) {
+                  _showMessage(
+                    'Invalid new PIN',
+                    'New PIN must contain 4 to 6 digits.',
+                  );
+                  return;
+                }
+
+                if (!pinRegex.hasMatch(confirmPin)) {
+                  _showMessage(
+                    'Invalid confirmation',
+                    'Confirm PIN must contain 4 to 6 digits.',
+                  );
+                  return;
+                }
+
+                if (newPin != confirmPin) {
+                  _showMessage(
+                    'PIN does not match',
+                    'New PIN and confirmation must be the same.',
+                  );
+                  return;
+                }
+
+                if (currentPin == newPin) {
+                  _showMessage(
+                    'Choose a different PIN',
+                    'New PIN must be different from your current PIN.',
+                  );
+                  return;
+                }
+
+                final valid = await AppLockService.verifyPin(currentPin);
+
+                if (!valid) {
+                  _showMessage(
+                    'Incorrect PIN',
+                    'Your current App Lock PIN is incorrect.',
+                  );
+                  return;
+                }
+
+                await AppLockService.changePin(newPin);
+
+                if (!mounted) return;
+
+                Navigator.pop(dialogContext);
+
+                _showMessage(
+                  'PIN changed',
+                  'Your App Lock PIN has been changed successfully.',
+                );
+              },
+              child: const Text('Change PIN'),
             ),
           ],
         );
@@ -549,11 +870,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await FirebaseAuth.instance.sendPasswordResetEmail(email: user!.email!);
 
+      if (!mounted) return;
+
       _showMessage(
         'Password reset email sent',
         'Check your email to create a new password.',
       );
     } catch (e) {
+      if (!mounted) return;
+
       _showMessage('Error', 'Unable to send password reset email.');
     }
   }
@@ -845,6 +1170,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       },
     );
   }
+
+  // ============================================================
+  // MESSAGE
+  // ============================================================
 
   void _showMessage(String title, String message) {
     if (!mounted) return;
