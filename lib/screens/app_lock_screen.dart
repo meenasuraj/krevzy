@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../services/app_lock_service.dart';
+import '../services/biometric_service.dart';
 
 class AppLockScreen extends StatefulWidget {
   final VoidCallback onUnlocked;
@@ -15,7 +16,22 @@ class _AppLockScreenState extends State<AppLockScreen> {
   final TextEditingController _pinController = TextEditingController();
 
   bool _isChecking = false;
+  bool _isBiometricChecking = false;
+  bool _biometricEnabled = false;
+  bool _biometricAvailable = false;
+  bool _biometricAttempted = false;
+
+  String _biometricLabel = 'Biometric';
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupBiometric();
+    });
+  }
 
   @override
   void dispose() {
@@ -23,7 +39,74 @@ class _AppLockScreenState extends State<AppLockScreen> {
     super.dispose();
   }
 
-  Future<void> _unlock() async {
+  Future<void> _setupBiometric() async {
+    final enabled = await AppLockService.isBiometricEnabled();
+
+    if (!mounted) return;
+
+    if (!enabled) {
+      setState(() {
+        _biometricEnabled = false;
+      });
+      return;
+    }
+
+    final available = await BiometricService.isAvailable();
+
+    if (!mounted) return;
+
+    final label = available
+        ? await BiometricService.getBiometricLabel()
+        : 'Biometric';
+
+    if (!mounted) return;
+
+    setState(() {
+      _biometricEnabled = enabled;
+      _biometricAvailable = available;
+      _biometricLabel = label;
+    });
+
+    if (enabled && available && !_biometricAttempted) {
+      _biometricAttempted = true;
+
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+
+      if (!mounted) return;
+
+      await _unlockWithBiometric();
+    }
+  }
+
+  Future<void> _unlockWithBiometric() async {
+    if (_isBiometricChecking) return;
+
+    setState(() {
+      _isBiometricChecking = true;
+      _errorMessage = null;
+    });
+
+    final authenticated = await BiometricService.authenticate();
+
+    if (!mounted) return;
+
+    setState(() {
+      _isBiometricChecking = false;
+    });
+
+    if (authenticated) {
+      widget.onUnlocked();
+      return;
+    }
+
+    setState(() {
+      _errorMessage =
+          'Biometric authentication failed or was cancelled. '
+          'Use your App Lock PIN.';
+    });
+  }
+
+  Future<void> _unlockWithPin() async {
     final pin = _pinController.text.trim();
 
     if (!RegExp(r'^\d{4,6}$').hasMatch(pin)) {
@@ -48,13 +131,14 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
     if (isCorrect) {
       widget.onUnlocked();
-    } else {
-      setState(() {
-        _errorMessage = 'Incorrect PIN. Please try again.';
-      });
-
-      _pinController.clear();
+      return;
     }
+
+    setState(() {
+      _errorMessage = 'Incorrect PIN. Please try again.';
+    });
+
+    _pinController.clear();
   }
 
   @override
@@ -93,21 +177,83 @@ class _AppLockScreenState extends State<AppLockScreen> {
                   const SizedBox(height: 10),
 
                   Text(
-                    'Enter your App Lock PIN to continue.',
+                    'Unlock Gapshap using your biometric '
+                    'or App Lock PIN.',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
                   ),
 
                   const SizedBox(height: 32),
 
+                  if (_biometricEnabled && _biometricAvailable) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: OutlinedButton.icon(
+                        onPressed: _isBiometricChecking
+                            ? null
+                            : _unlockWithBiometric,
+                        icon: _isBiometricChecking
+                            ? const SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Icon(
+                                _biometricLabel == 'Face ID'
+                                    ? Icons.face_rounded
+                                    : Icons.fingerprint_rounded,
+                                size: 26,
+                              ),
+                        label: Text(
+                          _isBiometricChecking
+                              ? 'Checking...'
+                              : 'Use $_biometricLabel',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    Row(
+                      children: [
+                        Expanded(child: Divider(color: Colors.grey.shade300)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            'OR',
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        Expanded(child: Divider(color: Colors.grey.shade300)),
+                      ],
+                    ),
+
+                    const SizedBox(height: 20),
+                  ],
+
                   TextField(
                     controller: _pinController,
-                    autofocus: true,
+                    autofocus: !(_biometricEnabled && _biometricAvailable),
                     obscureText: true,
                     keyboardType: TextInputType.number,
                     maxLength: 6,
                     textAlign: TextAlign.center,
-                    onSubmitted: (_) => _unlock(),
+                    onSubmitted: (_) => _unlockWithPin(),
                     decoration: InputDecoration(
                       labelText: 'App Lock PIN',
                       hintText: '••••',
@@ -126,7 +272,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                     width: double.infinity,
                     height: 52,
                     child: FilledButton(
-                      onPressed: _isChecking ? null : _unlock,
+                      onPressed: _isChecking ? null : _unlockWithPin,
                       child: _isChecking
                           ? const SizedBox(
                               width: 22,
@@ -134,7 +280,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Text(
-                              'Unlock',
+                              'Unlock with PIN',
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -142,6 +288,22 @@ class _AppLockScreenState extends State<AppLockScreen> {
                             ),
                     ),
                   ),
+
+                  if (_biometricEnabled && _biometricAvailable) ...[
+                    const SizedBox(height: 14),
+
+                    TextButton.icon(
+                      onPressed: _isBiometricChecking
+                          ? null
+                          : _unlockWithBiometric,
+                      icon: Icon(
+                        _biometricLabel == 'Face ID'
+                            ? Icons.face_rounded
+                            : Icons.fingerprint_rounded,
+                      ),
+                      label: Text('Try $_biometricLabel Again'),
+                    ),
+                  ],
                 ],
               ),
             ),
