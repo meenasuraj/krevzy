@@ -1,6 +1,12 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
+import '../services/follow_service.dart';
+import '../services/user_migration_service.dart';
 import 'settings_screen.dart';
+import 'followers_screen.dart';
+import 'following_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -10,25 +16,202 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // ---------------------------------------------------------------------------
-  // PROFILE DATA
-  // ---------------------------------------------------------------------------
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  String _username = 'shakshi';
-  String _name = 'Shakshi Meena';
+  bool _isLoading = true;
+  bool _isSyncingSearchProfile = false;
 
-  String _bio =
-      'Welcome to my Gapshap profile 💜\n'
-      'Connect • Share • Chat';
-  final int _posts = 12;
-  final int _followers = 248;
-  final int _following = 186;
-  // ---------------------------------------------------------------------------
+  String _username = '';
+  String _name = '';
+  String _bio = '';
+  String _photoUrl = '';
+
+  int _posts = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
+
+  // ============================================================
+  // LOAD PROFILE
+  // ============================================================
+
+  Future<void> _loadProfile() async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      return;
+    }
+
+    try {
+      final document = await _firestore.collection('users').doc(user.uid).get();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (document.exists) {
+        final data = document.data() ?? {};
+
+        setState(() {
+          _name = (data['name'] ?? user.displayName ?? '').toString();
+
+          _username = (data['username'] ?? '').toString();
+
+          _bio = (data['bio'] ?? '').toString();
+
+          _photoUrl = (data['photoUrl'] ?? '').toString();
+
+          _posts = _readInt(data['postsCount']);
+
+          _isLoading = false;
+        });
+      } else {
+        setState(() {
+          _name = user.displayName ?? '';
+
+          _username = '';
+          _bio = '';
+          _photoUrl = '';
+          _posts = 0;
+          _isLoading = false;
+        });
+      }
+    } on FirebaseException catch (e) {
+      debugPrint('Profile Firestore Error: ${e.code}');
+
+      debugPrint('Profile Firestore Message: ${e.message}');
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Unable to load profile.\n'
+            'Firestore: ${e.code}',
+          ),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Profile Load Error: $e');
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Unable to load profile.')));
+    }
+  }
+
+  // ============================================================
+  // INTEGER HELPER
+  // ============================================================
+
+  int _readInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  // ============================================================
+  // SEARCH PROFILE SYNC
+  // ============================================================
+
+  Future<void> _syncSearchProfile() async {
+    if (_isSyncingSearchProfile) {
+      return;
+    }
+
+    setState(() {
+      _isSyncingSearchProfile = true;
+    });
+
+    try {
+      await UserMigrationService.migrateCurrentUser();
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Search profile synced successfully.')),
+      );
+    } catch (e) {
+      debugPrint('Search Profile Sync Error: $e');
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Search profile sync failed.\n$e'),
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _isSyncingSearchProfile = false;
+    });
+  }
+
+  // ============================================================
   // BUILD
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
+    final user = _auth.currentUser;
+
+    if (_isLoading) {
+      return Scaffold(
+        appBar: _buildAppBar(),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (user == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Profile')),
+        body: const Center(child: Text('Please log in to view your profile.')),
+      );
+    }
+
     return Scaffold(
       appBar: _buildAppBar(),
       body: RefreshIndicator(
@@ -40,9 +223,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             children: [
               _buildProfileHeader(),
 
-              const SizedBox(height: 10),
+              const SizedBox(height: 16),
 
               _buildActionButtons(),
+
+              const SizedBox(height: 12),
+
+              _buildSearchSyncButton(),
 
               const SizedBox(height: 18),
 
@@ -56,34 +243,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // APP BAR
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   PreferredSizeWidget _buildAppBar() {
+    final username = _username.isEmpty ? 'profile' : _username;
+
     return AppBar(
       titleSpacing: 16,
-
       title: Row(
         children: [
-          Text(
-            '@$_username',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          Flexible(
+            child: Text(
+              '@$username',
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
           ),
-
           const SizedBox(width: 5),
-
           const Icon(Icons.keyboard_arrow_down, size: 20),
         ],
       ),
-
       actions: [
         IconButton(
           tooltip: 'Create',
           onPressed: _showCreateOptions,
           icon: const Icon(Icons.add_box_outlined),
         ),
-
         IconButton(
           tooltip: 'Settings',
           onPressed: _openSettings,
@@ -93,11 +280,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // PROFILE HEADER
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   Widget _buildProfileHeader() {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      return const SizedBox.shrink();
+    }
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
       child: Column(
@@ -106,7 +299,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // PROFILE PHOTO
               GestureDetector(
                 onTap: _showProfilePhotoOptions,
                 child: Stack(
@@ -121,11 +313,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: Theme.of(context).colorScheme.primary,
                         ),
                       ),
-                      child: const CircleAvatar(
-                        child: Icon(Icons.person, size: 48),
-                      ),
+                      child: _buildProfileAvatar(size: 84),
                     ),
-
                     Positioned(
                       right: 0,
                       bottom: 0,
@@ -153,14 +342,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
               const SizedBox(width: 24),
 
-              // STATISTICS
               Expanded(
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
                     _buildStat(value: _posts, label: 'Posts'),
-                    _buildStat(value: _followers, label: 'Followers'),
-                    _buildStat(value: _following, label: 'Following'),
+
+                    StreamBuilder<int>(
+                      stream: FollowService.followersCountStream(user.uid),
+                      builder: (context, snapshot) {
+                        return _buildStat(
+                          value: snapshot.data ?? 0,
+                          label: 'Followers',
+                          onTap: _openFollowers,
+                        );
+                      },
+                    ),
+
+                    StreamBuilder<int>(
+                      stream: FollowService.followingCountStream(user.uid),
+                      builder: (context, snapshot) {
+                        return _buildStat(
+                          value: snapshot.data ?? 0,
+                          label: 'Following',
+                          onTap: _openFollowing,
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -169,45 +377,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
           const SizedBox(height: 16),
 
-          // NAME
           Text(
-            _name,
+            _name.isEmpty ? 'Gapshap User' : _name,
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
 
-          const SizedBox(height: 5),
+          if (_username.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              '@$_username',
+              style: TextStyle(
+                fontSize: 14,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
 
-          // BIO
-          Text(_bio, style: const TextStyle(fontSize: 14, height: 1.4)),
+          if (_bio.isNotEmpty) ...[
+            const SizedBox(height: 7),
+            Text(_bio, style: const TextStyle(fontSize: 14, height: 1.4)),
+          ],
         ],
       ),
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // STAT
-  // ---------------------------------------------------------------------------
+  // ============================================================
+  // PROFILE AVATAR
+  // ============================================================
 
-  Widget _buildStat({required int value, required String label}) {
+  Widget _buildProfileAvatar({required double size}) {
+    if (_photoUrl.isNotEmpty) {
+      return ClipOval(
+        child: Image.network(
+          _photoUrl,
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) {
+            return CircleAvatar(
+              radius: size / 2,
+              child: Icon(Icons.person, size: size * 0.55),
+            );
+          },
+        ),
+      );
+    }
+
+    return CircleAvatar(
+      radius: size / 2,
+      child: Icon(Icons.person, size: size * 0.55),
+    );
+  }
+
+  // ============================================================
+  // STATISTICS
+  // ============================================================
+
+  Widget _buildStat({
+    required int value,
+    required String label,
+    VoidCallback? onTap,
+  }) {
     return GestureDetector(
-      onTap: () {
-        if (label == 'Followers') {
-          _showComingSoon('Followers');
-        } else if (label == 'Following') {
-          _showComingSoon('Following');
-        } else {
-          _showComingSoon('Posts');
-        }
-      },
+      onTap:
+          onTap ??
+          () {
+            if (label == 'Posts') {
+              _showComingSoon('Posts');
+            }
+          },
       child: Column(
         children: [
           Text(
             _formatNumber(value),
             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
-
           const SizedBox(height: 3),
-
           Text(
             label,
             style: TextStyle(
@@ -232,9 +478,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return number.toString();
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // ACTION BUTTONS
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   Widget _buildActionButtons() {
     return Padding(
@@ -242,18 +488,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Row(
         children: [
           Expanded(
-            child: OutlinedButton(
+            child: OutlinedButton.icon(
               onPressed: _editProfile,
-              child: const Text('Edit Profile'),
+              icon: const Icon(Icons.edit_outlined, size: 18),
+              label: const Text('Edit Profile'),
             ),
           ),
-
           const SizedBox(width: 8),
-
           Expanded(
-            child: OutlinedButton(
+            child: OutlinedButton.icon(
               onPressed: _shareProfile,
-              child: const Text('Share Profile'),
+              icon: const Icon(Icons.share_outlined, size: 18),
+              label: const Text('Share Profile'),
             ),
           ),
         ],
@@ -261,9 +507,37 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
+  // SEARCH SYNC
+  // ============================================================
+
+  Widget _buildSearchSyncButton() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _isSyncingSearchProfile ? null : _syncSearchProfile,
+          icon: _isSyncingSearchProfile
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.sync),
+          label: Text(
+            _isSyncingSearchProfile
+                ? 'Syncing Search Profile...'
+                : 'Sync Search Profile',
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ============================================================
   // PROFILE TABS
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   Widget _buildProfileTabs() {
     return const SizedBox(
@@ -273,21 +547,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
           Expanded(
             child: _ProfileTabButton(icon: Icons.grid_on, isSelected: true),
           ),
-
           Expanded(
             child: _ProfileTabButton(
               icon: Icons.video_collection_outlined,
               isSelected: false,
             ),
           ),
-
           Expanded(
             child: _ProfileTabButton(
               icon: Icons.bookmark_border,
               isSelected: false,
             ),
           ),
-
           Expanded(
             child: _ProfileTabButton(
               icon: Icons.person_pin_outlined,
@@ -299,11 +570,40 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // POSTS GRID
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   Widget _buildPostsGrid() {
+    if (_posts == 0) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
+        child: Center(
+          child: Column(
+            children: [
+              Icon(
+                Icons.grid_on,
+                size: 48,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'No posts yet',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Your posts will appear here.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -325,9 +625,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // EDIT PROFILE
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   void _editProfile() {
     final nameController = TextEditingController(text: _name);
@@ -338,20 +638,177 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     showDialog(
       context: context,
+      barrierDismissible: false,
       builder: (dialogContext) {
         String? errorText;
+        bool saving = false;
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            Future<void> save() async {
+              if (saving) {
+                return;
+              }
+
+              final user = _auth.currentUser;
+
+              if (user == null) {
+                setDialogState(() {
+                  errorText = 'You are not logged in.';
+                });
+                return;
+              }
+
+              final name = nameController.text.trim();
+
+              final username = usernameController.text
+                  .trim()
+                  .toLowerCase()
+                  .replaceAll(' ', '');
+
+              final bio = bioController.text.trim();
+
+              if (name.isEmpty) {
+                setDialogState(() {
+                  errorText = 'Name cannot be empty.';
+                });
+                return;
+              }
+
+              if (username.length < 3) {
+                setDialogState(() {
+                  errorText = 'Username must be at least 3 characters.';
+                });
+                return;
+              }
+
+              if (!RegExp(r'^[a-z0-9._]+$').hasMatch(username)) {
+                setDialogState(() {
+                  errorText = 'Username can contain letters, numbers, . and _.';
+                });
+                return;
+              }
+
+              if (bio.length > 150) {
+                setDialogState(() {
+                  errorText = 'Bio cannot be longer than 150 characters.';
+                });
+                return;
+              }
+
+              setDialogState(() {
+                saving = true;
+                errorText = null;
+              });
+
+              try {
+                // ================================================
+                // USERNAME CHECK
+                // ================================================
+
+                if (username != _username) {
+                  final usernameQuery = await _firestore
+                      .collection('users')
+                      .where('usernameLowercase', isEqualTo: username)
+                      .limit(1)
+                      .get();
+
+                  final taken = usernameQuery.docs.any(
+                    (doc) => doc.id != user.uid,
+                  );
+
+                  if (taken) {
+                    setDialogState(() {
+                      saving = false;
+                      errorText = 'This username is already taken.';
+                    });
+                    return;
+                  }
+                }
+
+                // ================================================
+                // SAVE FIRESTORE PROFILE
+                // ================================================
+
+                await _firestore.collection('users').doc(user.uid).set({
+                  'uid': user.uid,
+                  'name': name,
+                  'nameLowercase': name.toLowerCase(),
+                  'username': username,
+                  'usernameLowercase': username,
+                  'email': user.email ?? '',
+                  'bio': bio,
+                  'photoUrl': _photoUrl,
+                  'postsCount': _posts,
+                  'updatedAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+
+                // ================================================
+                // UPDATE FIREBASE AUTH DISPLAY NAME
+                // ================================================
+
+                await user.updateDisplayName(name);
+
+                if (!mounted) {
+                  return;
+                }
+
+                setState(() {
+                  _name = name;
+                  _username = username;
+                  _bio = bio;
+                });
+
+                if (dialogContext.mounted) {
+                  Navigator.pop(dialogContext);
+                }
+
+                if (!mounted) {
+                  return;
+                }
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Profile updated successfully.'),
+                  ),
+                );
+              } on FirebaseException catch (e) {
+                debugPrint('Edit Profile Firebase Error: ${e.code}');
+
+                debugPrint('Edit Profile Firebase Message: ${e.message}');
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                setDialogState(() {
+                  saving = false;
+                  errorText = 'Unable to save profile: ${e.code}';
+                });
+              } catch (e) {
+                debugPrint('Edit Profile Error: $e');
+
+                if (!dialogContext.mounted) {
+                  return;
+                }
+
+                setDialogState(() {
+                  saving = false;
+                  errorText = 'Something went wrong. Please try again.';
+                });
+              }
+            }
+
             return AlertDialog(
               title: const Text('Edit Profile'),
-
               content: SingleChildScrollView(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
                       controller: nameController,
+                      enabled: !saving,
+                      textCapitalization: TextCapitalization.words,
                       decoration: const InputDecoration(
                         labelText: 'Name',
                         border: OutlineInputBorder(),
@@ -362,6 +819,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     TextField(
                       controller: usernameController,
+                      enabled: !saving,
                       decoration: const InputDecoration(
                         labelText: 'Username',
                         prefixText: '@',
@@ -373,6 +831,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                     TextField(
                       controller: bioController,
+                      enabled: !saving,
                       maxLines: 3,
                       maxLength: 150,
                       decoration: const InputDecoration(
@@ -394,96 +853,93 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ],
                 ),
               ),
-
               actions: [
                 TextButton(
-                  onPressed: () {
-                    Navigator.pop(dialogContext);
-                  },
+                  onPressed: saving
+                      ? null
+                      : () {
+                          Navigator.pop(dialogContext);
+                        },
                   child: const Text('Cancel'),
                 ),
-
                 ElevatedButton(
-                  onPressed: () {
-                    final name = nameController.text.trim();
-
-                    final username = usernameController.text.trim().replaceAll(
-                      ' ',
-                      '',
-                    );
-
-                    final bio = bioController.text.trim();
-
-                    if (name.isEmpty) {
-                      setDialogState(() {
-                        errorText = 'Name cannot be empty.';
-                      });
-                      return;
-                    }
-
-                    if (username.isEmpty) {
-                      setDialogState(() {
-                        errorText = 'Username cannot be empty.';
-                      });
-                      return;
-                    }
-
-                    if (!RegExp(r'^[a-zA-Z0-9._]+$').hasMatch(username)) {
-                      setDialogState(() {
-                        errorText =
-                            'Username can contain letters, numbers, . and _.';
-                      });
-                      return;
-                    }
-
-                    setState(() {
-                      _name = name;
-                      _username = username;
-                      _bio = bio;
-                    });
-
-                    Navigator.pop(dialogContext);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Profile updated successfully'),
-                      ),
-                    );
-                  },
-                  child: const Text('Save'),
+                  onPressed: saving ? null : save,
+                  child: saving
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Save'),
                 ),
               ],
             );
           },
         );
       },
+    ).then((_) {
+      nameController.dispose();
+      usernameController.dispose();
+      bioController.dispose();
+    });
+  }
+
+  // ============================================================
+  // FOLLOWERS
+  // ============================================================
+
+  void _openFollowers() {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => FollowersScreen(userId: user.uid)),
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
+  // FOLLOWING
+  // ============================================================
+
+  void _openFollowing() {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => FollowingScreen(userId: user.uid)),
+    );
+  }
+
+  // ============================================================
   // SETTINGS
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   void _openSettings() {
     Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (context) {
-          return const SettingsScreen();
-        },
-      ),
+      MaterialPageRoute(builder: (context) => const SettingsScreen()),
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // SHARE PROFILE
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   void _shareProfile() {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
-      builder: (context) {
+      builder: (sheetContext) {
+        final username = _username.isEmpty ? 'profile' : _username;
+
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(20),
@@ -495,16 +951,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                 ),
 
+                const SizedBox(height: 10),
+
+                Text(
+                  '@$username',
+                  style: TextStyle(
+                    color: Theme.of(sheetContext).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+
                 const SizedBox(height: 20),
 
                 ListTile(
                   leading: const Icon(Icons.link),
                   title: const Text('Copy Profile Link'),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
+
+                    if (!mounted) {
+                      return;
+                    }
 
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Profile link copied')),
+                      const SnackBar(content: Text('Profile link copied.')),
                     );
                   },
                 ),
@@ -513,7 +982,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   leading: const Icon(Icons.share),
                   title: const Text('Share via other apps'),
                   onTap: () {
-                    Navigator.pop(context);
+                    Navigator.pop(sheetContext);
 
                     _showComingSoon('External sharing');
                   },
@@ -526,15 +995,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // PROFILE PHOTO OPTIONS
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   void _showProfilePhotoOptions() {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -551,7 +1020,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 leading: const Icon(Icons.photo_library_outlined),
                 title: const Text('Choose from Gallery'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
 
                   _showComingSoon('Gallery');
                 },
@@ -561,21 +1030,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 leading: const Icon(Icons.camera_alt_outlined),
                 title: const Text('Take a Photo'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
 
                   _showComingSoon('Camera');
                 },
               ),
 
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Remove Profile Photo'),
-                onTap: () {
-                  Navigator.pop(context);
+              if (_photoUrl.isNotEmpty)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('Remove Profile Photo'),
+                  onTap: () async {
+                    Navigator.pop(sheetContext);
 
-                  _showComingSoon('Remove profile photo');
-                },
-              ),
+                    await _removeProfilePhoto();
+                  },
+                ),
 
               const SizedBox(height: 10),
             ],
@@ -585,15 +1055,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
+  // REMOVE PROFILE PHOTO
+  // ============================================================
+
+  Future<void> _removeProfilePhoto() async {
+    final user = _auth.currentUser;
+
+    if (user == null) {
+      return;
+    }
+
+    try {
+      await _firestore.collection('users').doc(user.uid).set({
+        'photoUrl': '',
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _photoUrl = '';
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Profile photo removed.')));
+    } catch (e) {
+      debugPrint('Remove Profile Photo Error: $e');
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to remove profile photo.')),
+      );
+    }
+  }
+
+  // ============================================================
   // CREATE OPTIONS
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   void _showCreateOptions() {
     showModalBottomSheet(
       context: context,
       showDragHandle: true,
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -610,7 +1121,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 leading: const Icon(Icons.image_outlined),
                 title: const Text('New Post'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
 
                   _showComingSoon('New Post');
                 },
@@ -620,7 +1131,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 leading: const Icon(Icons.video_library_outlined),
                 title: const Text('New Reel'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
 
                   _showComingSoon('New Reel');
                 },
@@ -630,7 +1141,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 leading: const Icon(Icons.auto_stories_outlined),
                 title: const Text('New Story'),
                 onTap: () {
-                  Navigator.pop(context);
+                  Navigator.pop(sheetContext);
 
                   _showComingSoon('New Story');
                 },
@@ -644,21 +1155,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // OPEN POST
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   void _openPost(int index) {
     showDialog(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: Text('Post ${index + 1}'),
           content: const Text('Full post viewer will be added here.'),
           actions: [
             TextButton(
               onPressed: () {
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
               },
               child: const Text('Close'),
             ),
@@ -668,28 +1179,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // REFRESH
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   Future<void> _refreshProfile() async {
-    await Future.delayed(const Duration(milliseconds: 700));
-
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Profile refreshed'),
-        duration: Duration(milliseconds: 800),
-      ),
-    );
+    await _loadProfile();
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // COMING SOON
-  // ---------------------------------------------------------------------------
+  // ============================================================
 
   void _showComingSoon(String feature) {
     ScaffoldMessenger.of(context)
@@ -753,7 +1253,6 @@ class _PostGridItem extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             const Center(child: Icon(Icons.image_outlined, size: 42)),
-
             Positioned(
               right: 6,
               top: 6,

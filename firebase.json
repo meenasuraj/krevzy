@@ -1,1 +1,29 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"gapshap-app-9901","appId":"1:465805150366:android:5165563c71fb2b5c9ad38f","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"gapshap-app-9901","configurations":{"android":"1:465805150366:android:5165563c71fb2b5c9ad38f","ios":"1:465805150366:ios:f2ac4a6a992698279ad38f","web":"1:465805150366:web:4a6a363562468ef39ad38f"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "gapshap-app-9901",
+          "appId": "1:465805150366:android:5165563c71fb2b5c9ad38f",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "gapshap-app-9901",
+          "configurations": {
+            "android": "1:465805150366:android:5165563c71fb2b5c9ad38f",
+            "ios": "1:465805150366:ios:f2ac4a6a992698279ad38f",
+            "web": "1:465805150366:web:4a6a363562468ef39ad38f"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "database": "(default)",
+    "location": "nam7",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}

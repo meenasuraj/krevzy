@@ -26,9 +26,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
     _loadChatLocks();
   }
 
-  // ============================================================
-  // LOAD CHAT LOCKS
-  // ============================================================
+  // ---------------------------------------------------------------------------
+  // CHAT LOCKS
+  // ---------------------------------------------------------------------------
 
   Future<void> _loadChatLocks() async {
     final hashes = await ChatLockService.loadPinHashes();
@@ -41,12 +41,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
   }
 
-  // ============================================================
-  // SAVE CHAT LOCK
-  // ============================================================
-
-  Future<void> _saveChatLock(String chatId, String pinHash) async {
-    final updated = Map<String, String>.from(_chatPinHashes);
+  Future<void> _saveChatLock(
+    String chatId,
+    String pinHash,
+  ) async {
+    final updated =
+        Map<String, String>.from(_chatPinHashes);
 
     updated[chatId] = pinHash;
 
@@ -59,12 +59,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
   }
 
-  // ============================================================
-  // REMOVE CHAT LOCK
-  // ============================================================
-
-  Future<void> _removeChatLock(String chatId) async {
-    final updated = Map<String, String>.from(_chatPinHashes);
+  Future<void> _removeChatLock(
+    String chatId,
+  ) async {
+    final updated =
+        Map<String, String>.from(_chatPinHashes);
 
     updated.remove(chatId);
 
@@ -77,18 +76,24 @@ class _ChatsScreenState extends State<ChatsScreen> {
     });
   }
 
-  // ============================================================
-  // GET OTHER USER ID
-  // ============================================================
+  // ---------------------------------------------------------------------------
+  // GET OTHER USER
+  // ---------------------------------------------------------------------------
 
-  String? _getOtherUserId(Map<String, dynamic> data) {
-    final currentUser = FirebaseAuth.instance.currentUser;
+  String? _getOtherUserId(
+    Map<String, dynamic> data,
+  ) {
+    final currentUser =
+        FirebaseAuth.instance.currentUser;
 
     if (currentUser == null) {
       return null;
     }
 
-    final participants = List<String>.from(data['participants'] ?? []);
+    final participants =
+        List<String>.from(
+      data['participants'] ?? [],
+    );
 
     for (final uid in participants) {
       if (uid != currentUser.uid) {
@@ -99,28 +104,39 @@ class _ChatsScreenState extends State<ChatsScreen> {
     return null;
   }
 
-  // ============================================================
+  // ---------------------------------------------------------------------------
   // OPEN CHAT
-  // ============================================================
+  // ---------------------------------------------------------------------------
 
-  Future<void> _openChat(String chatId, String otherUserId) async {
-    final userDoc = await UserService.getUserById(otherUserId);
+  Future<void> _openChat(
+    String chatId,
+    String otherUserId,
+  ) async {
+    final userDoc =
+        await UserService.getUserById(
+      otherUserId,
+    );
 
     if (!mounted) return;
 
     final data = userDoc.data();
 
-    final name = data?['name']?.toString().trim();
+    final name =
+        data?['name']?.toString().trim();
 
-    final username = data?['username']?.toString().trim();
+    final username =
+        data?['username']?.toString().trim();
 
-    final displayName = name != null && name.isNotEmpty
-        ? name
-        : username != null && username.isNotEmpty
-        ? '@$username'
-        : 'Gapshap User';
+    final displayName =
+        name != null && name.isNotEmpty
+            ? name
+            : username != null &&
+                    username.isNotEmpty
+                ? '@$username'
+                : 'Gapshap User';
 
-    final savedPinHash = _chatPinHashes[chatId];
+    final savedPinHash =
+        _chatPinHashes[chatId];
 
     await Navigator.push(
       context,
@@ -130,7 +146,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
           name: displayName,
           initialPinHash: savedPinHash,
           onPinSet: (pinHash) async {
-            await _saveChatLock(chatId, pinHash);
+            await _saveChatLock(
+              chatId,
+              pinHash,
+            );
           },
           onLockRemoved: () async {
             await _removeChatLock(chatId);
@@ -139,84 +158,183 @@ class _ChatsScreenState extends State<ChatsScreen> {
       ),
     );
 
-    // Reload lock state after returning.
     await _loadChatLocks();
   }
 
-  // ============================================================
+  // ---------------------------------------------------------------------------
   // NEW CHAT
-  // ============================================================
+  // ---------------------------------------------------------------------------
 
   Future<void> _newChat() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const NewChatScreen()),
+      MaterialPageRoute(
+        builder: (_) => const NewChatScreen(),
+      ),
     );
 
-    // Refresh after creating a chat.
     if (!mounted) return;
 
     setState(() {});
   }
 
-  // ============================================================
+  // ---------------------------------------------------------------------------
+  // UNREAD BADGE
+  // ---------------------------------------------------------------------------
+
+  Widget _buildUnreadBadge(
+    int unreadCount,
+  ) {
+    if (unreadCount <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final text =
+        unreadCount > 99
+            ? '99+'
+            : unreadCount.toString();
+
+    return Container(
+      constraints: const BoxConstraints(
+        minWidth: 22,
+        minHeight: 22,
+      ),
+      padding:
+          const EdgeInsets.symmetric(
+        horizontal: 6,
+        vertical: 2,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context)
+            .colorScheme
+            .primary,
+        borderRadius:
+            BorderRadius.circular(12),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
   // CHAT TILE
-  // ============================================================
+  // ---------------------------------------------------------------------------
 
-  Widget _buildChatTile(DocumentSnapshot<Map<String, dynamic>> document) {
+  Widget _buildChatTile(
+    DocumentSnapshot<Map<String, dynamic>>
+        document,
+  ) {
     final chatId = document.id;
-
     final data = document.data();
 
     if (data == null) {
       return const SizedBox.shrink();
     }
 
-    final otherUserId = _getOtherUserId(data);
+    final otherUserId =
+        _getOtherUserId(data);
 
     if (otherUserId == null) {
       return const SizedBox.shrink();
     }
 
-    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-      future: UserService.getUserById(otherUserId),
-      builder: (context, userSnapshot) {
-        if (userSnapshot.connectionState == ConnectionState.waiting) {
+    final unreadCount =
+        ChatService.getUnreadCount(data);
+
+    return FutureBuilder<
+        DocumentSnapshot<Map<String, dynamic>>>(
+      future:
+          UserService.getUserById(
+        otherUserId,
+      ),
+      builder:
+          (context, userSnapshot) {
+        if (userSnapshot.connectionState ==
+            ConnectionState.waiting) {
           return const ListTile(
-            leading: CircleAvatar(child: Icon(Icons.person)),
+            leading: CircleAvatar(
+              child: Icon(Icons.person),
+            ),
             title: Text('Loading...'),
           );
         }
 
-        final userData = userSnapshot.data?.data();
+        final userData =
+            userSnapshot.data?.data();
 
-        final name = userData?['name']?.toString().trim() ?? '';
+        final name =
+            userData?['name']
+                    ?.toString()
+                    .trim() ??
+                '';
 
-        final username = userData?['username']?.toString().trim() ?? '';
+        final username =
+            userData?['username']
+                    ?.toString()
+                    .trim() ??
+                '';
 
-        final photoUrl = userData?['photoUrl']?.toString().trim() ?? '';
+        final photoUrl =
+            userData?['photoUrl']
+                    ?.toString()
+                    .trim() ??
+                '';
 
-        final displayName = name.isNotEmpty
-            ? name
-            : username.isNotEmpty
-            ? '@$username'
-            : 'Gapshap User';
+        final displayName =
+            name.isNotEmpty
+                ? name
+                : username.isNotEmpty
+                    ? '@$username'
+                    : 'Gapshap User';
 
-        final lastMessage = data['lastMessage']?.toString() ?? '';
+        final lastMessage =
+            data['lastMessage']
+                    ?.toString() ??
+                '';
 
-        final locked = _chatPinHashes.containsKey(chatId);
+        final lastMessageSenderId =
+            data['lastMessageSenderId']
+                    ?.toString() ??
+                '';
+
+        final currentUser =
+            FirebaseAuth.instance.currentUser;
+
+        final isLastMessageMine =
+            currentUser != null &&
+                lastMessageSenderId ==
+                    currentUser.uid;
+
+        final locked =
+            _chatPinHashes.containsKey(
+          chatId,
+        );
 
         return ListTile(
-          contentPadding: const EdgeInsets.symmetric(
+          contentPadding:
+              const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 5,
           ),
           leading: CircleAvatar(
             radius: 27,
-            backgroundImage: photoUrl.isNotEmpty
-                ? NetworkImage(photoUrl)
+            backgroundImage:
+                photoUrl.isNotEmpty
+                    ? NetworkImage(photoUrl)
+                    : null,
+            child: photoUrl.isEmpty
+                ? const Icon(
+                    Icons.person,
+                    size: 28,
+                  )
                 : null,
-            child: photoUrl.isEmpty ? const Icon(Icons.person, size: 28) : null,
           ),
           title: Row(
             children: [
@@ -224,81 +342,149 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 child: Text(
                   displayName,
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  overflow:
+                      TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight:
+                        unreadCount > 0
+                            ? FontWeight.bold
+                            : FontWeight.w600,
+                  ),
                 ),
               ),
               if (locked)
                 const Padding(
-                  padding: EdgeInsets.only(left: 6),
-                  child: Icon(Icons.lock, size: 16),
+                  padding:
+                      EdgeInsets.only(left: 6),
+                  child: Icon(
+                    Icons.lock,
+                    size: 16,
+                  ),
                 ),
             ],
           ),
-          subtitle: Text(
-            lastMessage.isEmpty ? 'Start a conversation' : lastMessage,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+          subtitle: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  lastMessage.isEmpty
+                      ? 'Start a conversation'
+                      : isLastMessageMine
+                          ? 'You: $lastMessage'
+                          : lastMessage,
+                  maxLines: 1,
+                  overflow:
+                      TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight:
+                        unreadCount > 0
+                            ? FontWeight.w600
+                            : FontWeight.normal,
+                  ),
+                ),
+              ),
+            ],
           ),
-          trailing: const Icon(Icons.chevron_right),
+          trailing: Row(
+            mainAxisSize:
+                MainAxisSize.min,
+            children: [
+              _buildUnreadBadge(
+                unreadCount,
+              ),
+              if (unreadCount > 0)
+                const SizedBox(width: 8),
+              const Icon(
+                Icons.chevron_right,
+              ),
+            ],
+          ),
           onTap: () {
-            _openChat(chatId, otherUserId);
+            _openChat(
+              chatId,
+              otherUserId,
+            );
           },
         );
       },
     );
   }
 
-  // ============================================================
+  // ---------------------------------------------------------------------------
   // BUILD
-  // ============================================================
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
     if (_isLoadingPins) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(
+        body: Center(
+          child:
+              CircularProgressIndicator(),
+        ),
+      );
     }
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           'Chats',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
         ),
         actions: [
           IconButton(
             tooltip: 'New Chat',
             onPressed: _newChat,
-            icon: const Icon(Icons.edit_outlined),
+            icon: const Icon(
+              Icons.edit_outlined,
+            ),
           ),
         ],
       ),
-      body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      body: StreamBuilder<
+          QuerySnapshot<Map<String, dynamic>>>(
         stream: ChatService.getMyChats(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
+            return const Center(
+              child:
+                  CircularProgressIndicator(),
+            );
           }
 
           if (snapshot.hasError) {
             return Center(
               child: Padding(
-                padding: const EdgeInsets.all(24),
+                padding:
+                    const EdgeInsets.all(24),
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisSize:
+                      MainAxisSize.min,
                   children: [
-                    const Icon(Icons.error_outline, size: 50),
-                    const SizedBox(height: 12),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 50,
+                    ),
+                    const SizedBox(
+                      height: 12,
+                    ),
                     const Text(
                       'Unable to load chats.',
-                      textAlign: TextAlign.center,
+                      textAlign:
+                          TextAlign.center,
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(
+                      height: 12,
+                    ),
                     FilledButton(
                       onPressed: () {
                         setState(() {});
                       },
-                      child: const Text('Retry'),
+                      child:
+                          const Text('Retry'),
                     ),
                   ],
                 ),
@@ -306,67 +492,100 @@ class _ChatsScreenState extends State<ChatsScreen> {
             );
           }
 
-          final chats = snapshot.data?.docs ?? [];
+          final chats =
+              snapshot.data?.docs ?? [];
 
           if (chats.isEmpty) {
-            return _EmptyChats(onNewChat: _newChat);
+            return _EmptyChats(
+              onNewChat: _newChat,
+            );
           }
 
           return ListView.separated(
             itemCount: chats.length,
-            separatorBuilder: (_, _) => const Divider(height: 1, indent: 86),
-            itemBuilder: (context, index) {
-              return _buildChatTile(chats[index]);
+            separatorBuilder: (_, _) =>
+                const Divider(
+              height: 1,
+              indent: 86,
+            ),
+            itemBuilder:
+                (context, index) {
+              return _buildChatTile(
+                chats[index],
+              );
             },
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
+      floatingActionButton:
+          FloatingActionButton(
         onPressed: _newChat,
         tooltip: 'New Chat',
-        child: const Icon(Icons.chat_outlined),
+        child: const Icon(
+          Icons.chat_outlined,
+        ),
       ),
     );
   }
 }
 
-// ================================================================
+// =============================================================================
 // EMPTY CHATS
-// ================================================================
+// =============================================================================
 
 class _EmptyChats extends StatelessWidget {
   final VoidCallback onNewChat;
 
-  const _EmptyChats({required this.onNewChat});
+  const _EmptyChats({
+    required this.onNewChat,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(30),
+        padding:
+            const EdgeInsets.all(30),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize:
+              MainAxisSize.min,
           children: [
             Icon(
               Icons.chat_bubble_outline,
               size: 75,
-              color: Theme.of(context).colorScheme.primary,
+              color: Theme.of(context)
+                  .colorScheme
+                  .primary,
             ),
-            const SizedBox(height: 18),
+            const SizedBox(
+              height: 18,
+            ),
             const Text(
               'No chats yet',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight:
+                    FontWeight.bold,
+              ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(
+              height: 8,
+            ),
             const Text(
               'Find someone on Gapshap and start your first conversation.',
-              textAlign: TextAlign.center,
+              textAlign:
+                  TextAlign.center,
             ),
-            const SizedBox(height: 20),
+            const SizedBox(
+              height: 20,
+            ),
             FilledButton.icon(
               onPressed: onNewChat,
-              icon: const Icon(Icons.edit_outlined),
-              label: const Text('New Chat'),
+              icon: const Icon(
+                Icons.edit_outlined,
+              ),
+              label:
+                  const Text('New Chat'),
             ),
           ],
         ),

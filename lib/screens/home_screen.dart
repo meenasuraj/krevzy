@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../models/post.dart';
+import '../services/post_service.dart';
+import '../widgets/post_card.dart';
 import 'chats_screen.dart';
+// import 'comments_screen.dart';
+import 'create_post_screen.dart';
+import 'notifications_screen.dart';
 import 'profile_screen.dart';
+import 'search_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,278 +28,344 @@ class _HomeScreenState extends State<HomeScreen> {
 
     _pages = [
       const _HomeTab(),
-      const _SearchTab(),
-      const _CreateTab(),
+      const SearchScreen(),
+      const CreatePostScreen(),
       const ChatsScreen(),
       const ProfileScreen(),
     ];
   }
 
+  void _onNavigationChanged(int index) {
+    setState(() {
+      _currentIndex = index;
+    });
+  }
+
+  void _openNotifications() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const NotificationsScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: _currentIndex == 4
-          ? null
-          : AppBar(
-              title: const Text(
-                'Gapshap',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              centerTitle: false,
-              actions: [
-                IconButton(
-                  onPressed: () {
-                    _showComingSoon('Likes');
-                  },
-                  icon: const Icon(Icons.favorite_border),
+      appBar: AppBar(
+        title: const Text(
+          'GAPSHAP',
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Likes',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Likes activity coming soon',
+                  ),
                 ),
-                IconButton(
-                  onPressed: () {
-                    _showComingSoon('Notifications');
-                  },
-                  icon: const Icon(Icons.notifications_none),
-                ),
-              ],
+              );
+            },
+            icon: const Icon(
+              Icons.favorite_border_rounded,
             ),
-
-      body: IndexedStack(index: _currentIndex, children: _pages),
-
+          ),
+          IconButton(
+            tooltip: 'Notifications',
+            onPressed: _openNotifications,
+            icon: const Icon(
+              Icons.notifications_none_rounded,
+            ),
+          ),
+        ],
+      ),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _currentIndex,
-
-        onDestinationSelected: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-
+        onDestinationSelected:
+            _onNavigationChanged,
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home),
+            icon: Icon(
+              Icons.home_outlined,
+            ),
+            selectedIcon: Icon(
+              Icons.home_rounded,
+            ),
             label: 'Home',
           ),
-
           NavigationDestination(
-            icon: Icon(Icons.search),
-            selectedIcon: Icon(Icons.search),
+            icon: Icon(
+              Icons.search_outlined,
+            ),
+            selectedIcon: Icon(
+              Icons.search_rounded,
+            ),
             label: 'Search',
           ),
-
           NavigationDestination(
-            icon: Icon(Icons.add_box_outlined),
-            selectedIcon: Icon(Icons.add_box),
+            icon: Icon(
+              Icons.add_box_outlined,
+            ),
+            selectedIcon: Icon(
+              Icons.add_box_rounded,
+            ),
             label: 'Create',
           ),
-
           NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
+            icon: Icon(
+              Icons.chat_bubble_outline_rounded,
+            ),
+            selectedIcon: Icon(
+              Icons.chat_bubble_rounded,
+            ),
             label: 'Chats',
           ),
-
           NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
+            icon: Icon(
+              Icons.person_outline_rounded,
+            ),
+            selectedIcon: Icon(
+              Icons.person_rounded,
+            ),
             label: 'Profile',
           ),
         ],
       ),
     );
   }
-
-  void _showComingSoon(String feature) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text('$feature coming soon')));
-  }
 }
 
-// ============================================================================
-// HOME
-// ============================================================================
+// ============================================================
+// HOME TAB
+// ============================================================
 
 class _HomeTab extends StatelessWidget {
   const _HomeTab();
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const Text(
-          'Stories',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-
-        const SizedBox(height: 15),
-
-        SizedBox(
-          height: 95,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: const [
-              _StoryItem(name: 'Your Story', icon: Icons.add),
-              _StoryItem(name: 'Rahul', icon: Icons.person),
-              _StoryItem(name: 'Priya', icon: Icons.person),
-              _StoryItem(name: 'Aman', icon: Icons.person),
-              _StoryItem(name: 'Neha', icon: Icons.person),
-            ],
+    return RefreshIndicator(
+      onRefresh: () async {
+        await Future<void>.delayed(
+          const Duration(
+            milliseconds: 500,
           ),
-        ),
-
-        const SizedBox(height: 25),
-
-        const Text(
-          'Latest Posts',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
-
-        const SizedBox(height: 15),
-
-        const _PostCard(username: 'rahul', caption: 'Beautiful day! ☀️'),
-
-        const _PostCard(username: 'priya', caption: 'Gapshap time! 💜'),
-      ],
-    );
-  }
-}
-
-// ============================================================================
-// STORY
-// ============================================================================
-
-class _StoryItem extends StatelessWidget {
-  final String name;
-  final IconData icon;
-
-  const _StoryItem({required this.name, required this.icon});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 75,
-      margin: const EdgeInsets.only(right: 14),
-      child: Column(
-        children: [
-          CircleAvatar(radius: 30, child: Icon(icon)),
-
-          const SizedBox(height: 6),
-
-          Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        );
+      },
+      child: CustomScrollView(
+        physics:
+            const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          const SliverToBoxAdapter(
+            child: _StoriesSection(),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                16,
+                18,
+                16,
+                8,
+              ),
+              child: Text(
+                'Latest Posts',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+              ),
+            ),
+          ),
+          const _RealPostsFeed(),
         ],
       ),
     );
   }
 }
 
-// ============================================================================
-// POST
-// ============================================================================
+// ============================================================
+// STORIES
+// ============================================================
 
-class _PostCard extends StatelessWidget {
-  final String username;
-  final String caption;
-
-  const _PostCard({required this.username, required this.caption});
+class _StoriesSection extends StatelessWidget {
+  const _StoriesSection();
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 20),
-      clipBehavior: Clip.antiAlias,
+    final stories = [
+      ('Your Story', Icons.add),
+      ('Friends', Icons.person),
+      ('Explore', Icons.explore),
+      ('Popular', Icons.trending_up),
+    ];
 
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.person)),
+    return SizedBox(
+      height: 108,
+      child: ListView.separated(
+        padding:
+            const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        scrollDirection:
+            Axis.horizontal,
+        itemCount: stories.length,
+        separatorBuilder: (_, _) =>
+            const SizedBox(width: 18),
+        itemBuilder:
+            (context, index) {
+          final story =
+              stories[index];
 
-            title: Text(
-              username,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+          return SizedBox(
+            width: 68,
+            child: Column(
+              children: [
+                CircleAvatar(
+                  radius: 30,
+                  child: Icon(
+                    story.$2,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(
+                  height: 7,
+                ),
+                Text(
+                  story.$1,
+                  maxLines: 1,
+                  overflow:
+                      TextOverflow.ellipsis,
+                  style:
+                      const TextStyle(
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
-
-            trailing: IconButton(
-              onPressed: () {},
-              icon: const Icon(Icons.more_vert),
-            ),
-          ),
-
-          Container(
-            height: 260,
-            width: double.infinity,
-            color: Colors.grey.shade200,
-            child: const Icon(Icons.image_outlined, size: 70),
-          ),
-
-          Row(
-            children: [
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.favorite_border),
-              ),
-
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.chat_bubble_outline),
-              ),
-
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.send_outlined),
-              ),
-
-              const Spacer(),
-
-              IconButton(
-                onPressed: () {},
-                icon: const Icon(Icons.bookmark_border),
-              ),
-            ],
-          ),
-
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Text(caption, style: const TextStyle(fontSize: 15)),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 }
 
-// ============================================================================
-// SEARCH
-// ============================================================================
+// ============================================================
+// REAL FIRESTORE POSTS FEED
+// ============================================================
 
-class _SearchTab extends StatelessWidget {
-  const _SearchTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Search 🔍',
-        style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// CREATE
-// ============================================================================
-
-class _CreateTab extends StatelessWidget {
-  const _CreateTab();
+class _RealPostsFeed
+    extends StatelessWidget {
+  const _RealPostsFeed();
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: Text(
-        'Create Post ➕',
-        style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold),
-      ),
+    return StreamBuilder<List<Post>>(
+      stream: PostService.getPosts(),
+      builder:
+          (context, snapshot) {
+        if (snapshot.connectionState ==
+            ConnectionState.waiting) {
+          return const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child:
+                  CircularProgressIndicator(),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Padding(
+                padding:
+                    const EdgeInsets.all(
+                  24,
+                ),
+                child: Text(
+                  'Posts load nahi ho sake.\n\n'
+                  '${snapshot.error}',
+                  textAlign:
+                      TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }
+
+        final posts =
+            snapshot.data ?? [];
+
+        if (posts.isEmpty) {
+          return const SliverFillRemaining(
+            hasScrollBody: false,
+            child: Center(
+              child: Column(
+                mainAxisSize:
+                    MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons
+                        .dynamic_feed_outlined,
+                    size: 64,
+                  ),
+                  SizedBox(
+                    height: 12,
+                  ),
+                  Text(
+                    'No posts yet',
+                    style:
+                        TextStyle(
+                      fontSize: 18,
+                      fontWeight:
+                          FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(
+                    height: 6,
+                  ),
+                  Text(
+                    'Create the first GAPSHAP post.',
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return SliverList(
+          delegate:
+              SliverChildBuilderDelegate(
+            (context, index) {
+              final post =
+                  posts[index];
+
+              return PostCard(
+                key: ValueKey(
+                  post.id,
+                ),
+                post: post,
+              );
+            },
+            childCount:
+                posts.length,
+          ),
+        );
+      },
     );
   }
 }
