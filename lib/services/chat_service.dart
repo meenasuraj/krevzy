@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'notification_service.dart';
+
 class ChatService {
   static final FirebaseFirestore _firestore =
       FirebaseFirestore.instance;
@@ -18,129 +20,97 @@ class ChatService {
     return user.uid;
   }
 
-  // --------------------------------------------------------------------------
-  // DETERMINISTIC CHAT ID
-  // --------------------------------------------------------------------------
-
   static String getChatId({
     required String userId1,
     required String userId2,
   }) {
-    final ids = [
-      userId1,
-      userId2,
-    ]..sort();
+    final ids = [userId1, userId2]..sort();
 
     return '${ids[0]}_${ids[1]}';
   }
 
-  // --------------------------------------------------------------------------
-  // CREATE OR GET CHAT
-  // --------------------------------------------------------------------------
-
   static Future<String> createOrGetChat({
     required String otherUserId,
   }) async {
-    final currentUser = currentUserId;
-
-    if (currentUser == otherUserId) {
-      throw Exception(
-        'You cannot chat with yourself.',
-      );
-    }
-
-    final chatId = getChatId(
-      userId1: currentUser,
-      userId2: otherUserId,
-    );
-
-    final chatRef =
-        _firestore.collection('chats').doc(chatId);
-
-    // ------------------------------------------------------------------------
-    // CHECK EXISTING CHAT DIRECTLY
-    // ------------------------------------------------------------------------
-
     try {
-      final existingChat =
-          await chatRef.get();
+      final myUid = currentUserId;
 
-      if (existingChat.exists) {
-        final data =
-            existingChat.data();
-
-        if (data != null) {
-          final participants =
-              List<String>.from(
-            data['participants'] ?? [],
-          );
-
-          if (participants.length == 2 &&
-              participants.contains(currentUser) &&
-              participants.contains(otherUserId)) {
-            print(
-              'Existing chat found: $chatId',
-            );
-
-            return chatId;
-          }
-        }
+      if (myUid == otherUserId) {
+        throw Exception(
+          'You cannot create a chat with yourself.',
+        );
       }
-    } catch (e) {
-      print(
-        'CHAT DIRECT READ ERROR: $e',
+
+      final chatId = getChatId(
+        userId1: myUid,
+        userId2: otherUserId,
       );
 
-      throw Exception(
-        'Unable to access chat: $e',
-      );
-    }
+      final chatRef =
+          _firestore.collection('chats').doc(chatId);
 
-    // ------------------------------------------------------------------------
-    // CREATE CHAT
-    // ------------------------------------------------------------------------
+      try {
+        final snapshot = await chatRef.get();
 
-    try {
+        if (snapshot.exists) {
+          final data = snapshot.data();
+
+          if (data != null) {
+            final participants =
+                data['participants'];
+
+            if (participants is List &&
+                participants.contains(myUid) &&
+                participants.contains(otherUserId)) {
+              return chatId;
+            }
+          }
+
+          throw Exception(
+            'Invalid chat participants.',
+          );
+        }
+      } on FirebaseException catch (e) {
+        // Permission errors are converted into a user-facing exception below.
+
+
+        if (e.code != 'permission-denied') {
+          rethrow;
+        }
+
+        throw Exception(
+          'Unable to access chat: '
+          '${e.message ?? e.code}',
+        );
+      }
+
+      final now =
+          FieldValue.serverTimestamp();
+
       await chatRef.set({
         'participants': [
-          currentUser,
+          myUid,
           otherUserId,
         ],
         'lastMessage': '',
-        'lastMessageTime':
-            FieldValue.serverTimestamp(),
+        'lastMessageTime': now,
         'lastMessageSenderId': '',
         'unreadCounts': {
-          currentUser: 0,
+          myUid: 0,
           otherUserId: 0,
         },
         'typingUsers': {
-          currentUser: false,
-          otherUserId: false,
+          myUid: 'none',
+          otherUserId: 'none',
         },
-        'createdAt':
-            FieldValue.serverTimestamp(),
+        'createdAt': now,
       });
 
-      print(
-        'NEW CHAT CREATED: $chatId',
-      );
-
       return chatId;
-    } catch (e) {
-      print(
-        'CHAT CREATION ERROR: $e',
-      );
-
-      throw Exception(
-        'Unable to create new chat: $e',
-      );
+    } catch (_) {
+      rethrow;
     }
   }
-
-  // --------------------------------------------------------------------------
-  // MY CHATS
-  // --------------------------------------------------------------------------
 
   static Stream<QuerySnapshot<Map<String, dynamic>>>
       getMyChats() {
@@ -150,22 +120,14 @@ class ChatService {
           'participants',
           arrayContains: currentUserId,
         )
-        .orderBy(
-          'lastMessageTime',
-          descending: true,
-        )
         .snapshots();
   }
 
-  // --------------------------------------------------------------------------
-  // UNREAD COUNT
-  // --------------------------------------------------------------------------
-
   static int getUnreadCount(
-    Map<String, dynamic> chatData,
+    Map<String, dynamic> data,
   ) {
     final unreadCounts =
-        chatData['unreadCounts'];
+        data['unreadCounts'];
 
     if (unreadCounts is! Map) {
       return 0;
@@ -185,56 +147,41 @@ class ChatService {
     return 0;
   }
 
-  // --------------------------------------------------------------------------
-  // TYPING STATUS
-  // --------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // TYPING / THINKING
+  // ---------------------------------------------------------------------------
 
   static Future<void> setTyping({
     required String chatId,
     required bool isTyping,
   }) async {
-    final userId = currentUserId;
-
-    final chatRef =
-        _firestore
-            .collection('chats')
-            .doc(chatId);
-
-    final chatSnapshot =
-        await chatRef.get();
-
-    if (!chatSnapshot.exists) {
-      return;
-    }
-
-    final chatData =
-        chatSnapshot.data();
-
-    if (chatData == null) {
-      return;
-    }
-
-    final participants =
-        List<String>.from(
-      chatData['participants'] ?? [],
+    await setTypingState(
+      chatId: chatId,
+      state: isTyping ? 'typing' : 'none',
     );
+  }
 
-    if (!participants.contains(userId)) {
-      throw Exception(
-        'You are not a participant in this chat.',
-      );
-    }
+  static Future<void> setTypingState({
+    required String chatId,
+    required String state,
+  }) async {
+    final uid = currentUserId;
 
-    await chatRef.update({
-      'typingUsers.$userId': isTyping,
+    final validState =
+        state == 'typing' ||
+        state == 'thinking'
+            ? state
+            : 'none';
+
+    await _firestore
+        .collection('chats')
+        .doc(chatId)
+        .update({
+      'typingUsers.$uid': validState,
     });
   }
 
-  // --------------------------------------------------------------------------
-  // GET TYPING USERS
-  // --------------------------------------------------------------------------
-
-  static Stream<Map<String, bool>>
+  static Stream<Map<String, String>>
       getTypingUsers(
     String chatId,
   ) {
@@ -242,42 +189,69 @@ class ChatService {
         .collection('chats')
         .doc(chatId)
         .snapshots()
-        .map((snapshot) {
-      final data =
-          snapshot.data();
+        .map(
+      (snapshot) {
+        if (!snapshot.exists) {
+          return <String, String>{};
+        }
 
-      if (data == null) {
-        return <String, bool>{};
-      }
+        final data =
+            snapshot.data();
 
-      final rawTypingUsers =
-          data['typingUsers'];
+        if (data == null) {
+          return <String, String>{};
+        }
 
-      if (rawTypingUsers is! Map) {
-        return <String, bool>{};
-      }
+        final typingUsers =
+            data['typingUsers'];
 
-      final result =
-          <String, bool>{};
+        if (typingUsers is! Map) {
+          return <String, String>{};
+        }
 
-      rawTypingUsers.forEach(
-        (key, value) {
-          if (key is String &&
-              value is bool) {
-            result[key] = value;
-          }
-        },
-      );
+        final result =
+            <String, String>{};
 
-      return result;
-    });
+        typingUsers.forEach(
+          (key, value) {
+            if (key is! String) {
+              return;
+            }
+
+            // New format:
+            // "typing"
+            // "thinking"
+            // "none"
+            if (value is String) {
+              if (value == 'typing' ||
+                  value == 'thinking') {
+                result[key] = value;
+              } else {
+                result[key] = 'none';
+              }
+
+              return;
+            }
+
+            // Backward compatibility with old bool format.
+            if (value is bool) {
+              result[key] =
+                  value ? 'typing' : 'none';
+            }
+          },
+        );
+
+        return result;
+      },
+    );
   }
 
-  // --------------------------------------------------------------------------
-  // GET MESSAGES
-  // --------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
+  // MESSAGES
+  // ---------------------------------------------------------------------------
 
-  static Stream<QuerySnapshot<Map<String, dynamic>>>
+  static Stream<
+      QuerySnapshot<Map<String, dynamic>>>
       getMessages(
     String chatId,
   ) {
@@ -292,28 +266,34 @@ class ChatService {
         .snapshots();
   }
 
-  // --------------------------------------------------------------------------
-  // SEND MESSAGE
-  // --------------------------------------------------------------------------
-
   static Future<void> sendMessage({
     required String chatId,
     required String text,
   }) async {
-    final cleanText =
+    final uid = currentUserId;
+
+    final trimmedText =
         text.trim();
 
-    if (cleanText.isEmpty) {
+    if (trimmedText.isEmpty) {
       return;
     }
 
-    final userId =
-        currentUserId;
+    if (trimmedText.length > 500) {
+      throw Exception(
+        'Message cannot exceed 500 characters.',
+      );
+    }
 
     final chatRef =
         _firestore
             .collection('chats')
             .doc(chatId);
+
+    final messageRef =
+        chatRef
+            .collection('messages')
+            .doc();
 
     final chatSnapshot =
         await chatRef.get();
@@ -329,65 +309,67 @@ class ChatService {
 
     if (chatData == null) {
       throw Exception(
-        'Unable to read chat.',
+        'Chat data is unavailable.',
       );
     }
 
     final participants =
-        List<String>.from(
-      chatData['participants'] ?? [],
-    );
+        chatData['participants'];
 
-    if (!participants.contains(userId)) {
+    if (participants is! List ||
+        !participants.contains(uid)) {
       throw Exception(
         'You are not a participant in this chat.',
       );
     }
 
-    String? receiverId;
+    String? otherUserId;
 
-    for (final participantId
+    for (final participant
         in participants) {
-      if (participantId != userId) {
-        receiverId =
-            participantId;
+      if (participant is String &&
+          participant != uid) {
+        otherUserId =
+            participant;
         break;
       }
     }
 
-    if (receiverId == null ||
-        receiverId.isEmpty) {
+    if (otherUserId == null) {
       throw Exception(
-        'Unable to determine message receiver.',
+        'Other chat participant not found.',
       );
     }
 
-    final currentUnreadCounts =
+    final unreadCounts =
         Map<String, dynamic>.from(
       chatData['unreadCounts'] ?? {},
     );
 
-    final currentReceiverUnread =
-        currentUnreadCounts[
-                    receiverId] is num
-            ? (currentUnreadCounts[
-                    receiverId] as num)
+    final currentOtherUnread =
+        unreadCounts[otherUserId] is num
+            ? (unreadCounts[
+                    otherUserId] as num)
+                .toInt()
+            : 0;
+
+    unreadCounts[otherUserId] =
+        currentOtherUnread + 1;
+
+    unreadCounts[uid] =
+        unreadCounts[uid] is num
+            ? (unreadCounts[uid] as num)
                 .toInt()
             : 0;
 
     final batch =
         _firestore.batch();
 
-    final messageRef =
-        chatRef
-            .collection('messages')
-            .doc();
-
     batch.set(
       messageRef,
       {
-        'senderId': userId,
-        'text': cleanText,
+        'senderId': uid,
+        'text': trimmedText,
         'timestamp':
             FieldValue.serverTimestamp(),
         'isRead': false,
@@ -398,33 +380,45 @@ class ChatService {
     batch.update(
       chatRef,
       {
-        'lastMessage': cleanText,
+        'lastMessage':
+            trimmedText,
         'lastMessageTime':
             FieldValue.serverTimestamp(),
         'lastMessageSenderId':
-            userId,
-        'unreadCounts': {
-          userId: 0,
-          receiverId:
-              currentReceiverUnread + 1,
-        },
-        'typingUsers.$userId':
-            false,
+            uid,
+        'unreadCounts':
+            unreadCounts,
+        'typingUsers.$uid':
+            'none',
       },
     );
 
     await batch.commit();
+
+    // Message is already safely stored.
+    // Notification failure must never make
+    // the message appear to have failed.
+    try {
+      await NotificationService
+          .createMessageNotification(
+        receiverUserId:
+            otherUserId,
+        chatId: chatId,
+        message: trimmedText,
+      );
+    } catch (_) {
+      // Notification failure must not undo a successfully sent message.
+    }
   }
 
-  // --------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
   // MARK CHAT AS READ
-  // --------------------------------------------------------------------------
+  // ---------------------------------------------------------------------------
 
   static Future<void> markChatAsRead(
     String chatId,
   ) async {
-    final userId =
-        currentUserId;
+    final uid = currentUserId;
 
     final chatRef =
         _firestore
@@ -446,40 +440,28 @@ class ChatService {
     }
 
     final participants =
-        List<String>.from(
-      chatData['participants'] ?? [],
-    );
+        chatData['participants'];
 
-    if (!participants.contains(userId)) {
-      throw Exception(
-        'You are not a participant in this chat.',
-      );
-    }
-
-    final unreadCounts =
-        Map<String, dynamic>.from(
-      chatData['unreadCounts'] ?? {},
-    );
-
-    final currentUnread =
-        unreadCounts[userId];
-
-    final unreadNumber =
-        currentUnread is num
-            ? currentUnread.toInt()
-            : 0;
-
-    if (unreadNumber == 0) {
+    if (participants is! List ||
+        !participants.contains(uid)) {
       return;
     }
 
     final batch =
         _firestore.batch();
 
+    final unreadCounts =
+        Map<String, dynamic>.from(
+      chatData['unreadCounts'] ?? {},
+    );
+
+    unreadCounts[uid] = 0;
+
     batch.update(
       chatRef,
       {
-        'unreadCounts.$userId': 0,
+        'unreadCounts':
+            unreadCounts,
       },
     );
 
@@ -487,33 +469,42 @@ class ChatService {
         await chatRef
             .collection('messages')
             .where(
-              'senderId',
-              isNotEqualTo: userId,
+              'isRead',
+              isEqualTo: false,
             )
             .get();
 
-    final readAt =
-        FieldValue.serverTimestamp();
-
-    for (final message
+    for (final messageDoc
         in messagesSnapshot.docs) {
-      final data =
-          message.data();
+      final messageData =
+          messageDoc.data();
 
-      final isRead =
-          data['isRead'] == true;
+      final senderId =
+          messageData['senderId'];
 
-      if (!isRead) {
+      if (senderId != uid) {
         batch.update(
-          message.reference,
+          messageDoc.reference,
           {
             'isRead': true,
-            'readAt': readAt,
+            'readAt':
+                FieldValue.serverTimestamp(),
           },
         );
       }
     }
 
     await batch.commit();
+
+    // Opening a chat also clears
+    // message notifications for this chat.
+    try {
+      await NotificationService
+          .markChatNotificationsAsRead(
+        chatId,
+      );
+    } catch (_) {
+      // Notification read-state failure must not undo chat read-state changes.
+    }
   }
 }

@@ -3,9 +3,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ============================================================
+    // =========================================================================
     // USERS
-    // ============================================================
+    // =========================================================================
 
     match /users/{userId} {
 
@@ -17,9 +17,9 @@ service cloud.firestore {
         && request.auth.uid == userId;
 
 
-      // ==========================================================
+      // -----------------------------------------------------------------------
       // NOTIFICATIONS
-      // ==========================================================
+      // -----------------------------------------------------------------------
 
       match /notifications/{notificationId} {
 
@@ -36,9 +36,52 @@ service cloud.firestore {
       }
 
 
-      // ==========================================================
+      // -----------------------------------------------------------------------
+      // PERSONAL NOTES
+      // -----------------------------------------------------------------------
+
+      match /notes/{noteId} {
+
+        // Only the owner can read their private notes.
+        allow read:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+
+        // Only the owner can create a note.
+        allow create:
+          if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.title is string
+          && request.resource.data.content is string
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.content.size() <= 10000;
+
+
+        // Only the owner can update their own note.
+        allow update:
+          if request.auth != null
+          && request.auth.uid == userId
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.title is string
+          && request.resource.data.content is string
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.content.size() <= 10000;
+
+
+        // Only the owner can delete their own note.
+        allow delete:
+          if request.auth != null
+          && request.auth.uid == userId
+          && resource.data.userId == request.auth.uid;
+      }
+
+
+      // -----------------------------------------------------------------------
       // FOLLOWING
-      // ==========================================================
+      // -----------------------------------------------------------------------
 
       match /following/{followedUserId} {
 
@@ -60,9 +103,9 @@ service cloud.firestore {
       }
 
 
-      // ==========================================================
+      // -----------------------------------------------------------------------
       // FOLLOWERS
-      // ==========================================================
+      // -----------------------------------------------------------------------
 
       match /followers/{followerUserId} {
 
@@ -85,30 +128,42 @@ service cloud.firestore {
     }
 
 
-    // ============================================================
+    // =========================================================================
     // POSTS
-    // ============================================================
+    // =========================================================================
 
     match /posts/{postId} {
 
       allow read:
         if request.auth != null;
 
+
+      // -----------------------------------------------------------------------
+      // CREATE POST
+      // -----------------------------------------------------------------------
+
       allow create:
         if request.auth != null
         && request.resource.data.userId == request.auth.uid;
 
 
+      // -----------------------------------------------------------------------
+      // UPDATE POST
+      // -----------------------------------------------------------------------
+
       allow update:
         if request.auth != null
         && (
 
-          // POST OWNER UPDATE
+          // Owner can update their own post.
           resource.data.userId == request.auth.uid
 
           ||
 
-          // LIKE / UNLIKE UPDATE
+          // -------------------------------------------------------------------
+          // LIKE / UNLIKE COUNT UPDATE
+          // -------------------------------------------------------------------
+
           (
             request.resource.data.userId ==
               resource.data.userId
@@ -151,7 +206,9 @@ service cloud.firestore {
                     /likes/$(request.auth.uid)
                 )
               )
+
               ||
+
               (
                 request.resource.data.likesCount ==
                   resource.data.likesCount - 1
@@ -173,7 +230,10 @@ service cloud.firestore {
 
           ||
 
+          // -------------------------------------------------------------------
           // COMMENT COUNT UPDATE
+          // -------------------------------------------------------------------
+
           (
             request.resource.data.userId ==
               resource.data.userId
@@ -204,6 +264,7 @@ service cloud.firestore {
                 resource.data.commentsCount + 1
 
               ||
+
               request.resource.data.commentsCount ==
                 resource.data.commentsCount - 1
             )
@@ -211,14 +272,18 @@ service cloud.firestore {
         );
 
 
+      // -----------------------------------------------------------------------
+      // DELETE POST
+      // -----------------------------------------------------------------------
+
       allow delete:
         if request.auth != null
         && resource.data.userId == request.auth.uid;
 
 
-      // ==========================================================
+      // -----------------------------------------------------------------------
       // LIKES
-      // ==========================================================
+      // -----------------------------------------------------------------------
 
       match /likes/{userId} {
 
@@ -238,19 +303,19 @@ service cloud.firestore {
       }
 
 
-      // ==========================================================
+      // -----------------------------------------------------------------------
       // COMMENTS
-      // ==========================================================
+      // -----------------------------------------------------------------------
 
       match /comments/{commentId} {
 
         allow read:
           if request.auth != null;
 
+
         allow create:
           if request.auth != null
-          && request.resource.data.userId ==
-             request.auth.uid
+          && request.resource.data.userId == request.auth.uid
           && request.resource.data.text is string
           && request.resource.data.text.size() > 0
           && request.resource.data.text.size() <= 500
@@ -258,34 +323,28 @@ service cloud.firestore {
           && request.resource.data.userName is string
           && request.resource.data.userPhotoUrl is string;
 
+
         allow update:
           if request.auth != null
-          && resource.data.userId ==
-             request.auth.uid;
+          && resource.data.userId == request.auth.uid;
+
 
         allow delete:
           if request.auth != null
-          && resource.data.userId ==
-             request.auth.uid;
+          && resource.data.userId == request.auth.uid;
       }
     }
 
 
-    // ============================================================
+    // =========================================================================
     // CHATS
-    // ============================================================
+    // =========================================================================
 
     match /chats/{chatId} {
 
-      // ----------------------------------------------------------
-      // READ SINGLE CHAT
-      // ----------------------------------------------------------
-      //
-      // If the document does not exist, allow the authenticated
-      // user to check it.
-      //
-      // If it exists, only a participant can read it.
-      // ----------------------------------------------------------
+      // -----------------------------------------------------------------------
+      // GET ONE CHAT
+      // -----------------------------------------------------------------------
 
       allow get:
         if request.auth != null
@@ -294,52 +353,46 @@ service cloud.firestore {
           ||
           (
             resource.data.participants is list
-            && request.auth.uid in
-               resource.data.participants
+            && request.auth.uid in resource.data.participants
           )
         );
 
 
-      // ----------------------------------------------------------
-      // READ CHAT LIST
-      // ----------------------------------------------------------
+      // -----------------------------------------------------------------------
+      // LIST MY CHATS
+      // -----------------------------------------------------------------------
 
       allow list:
         if request.auth != null
-        && resource.data.participants is list
-        && request.auth.uid in
-           resource.data.participants;
+        && request.auth.uid in resource.data.participants;
 
 
-      // ----------------------------------------------------------
+      // -----------------------------------------------------------------------
       // CREATE CHAT
-      // ----------------------------------------------------------
+      // -----------------------------------------------------------------------
 
       allow create:
         if request.auth != null
         && request.resource.data.participants is list
         && request.resource.data.participants.size() == 2
-        && request.auth.uid in
-           request.resource.data.participants
+        && request.auth.uid in request.resource.data.participants
         && request.resource.data.participants[0] is string
         && request.resource.data.participants[1] is string
         && request.resource.data.participants[0] !=
            request.resource.data.participants[1];
 
 
-      // ----------------------------------------------------------
+      // -----------------------------------------------------------------------
       // UPDATE CHAT
-      // ----------------------------------------------------------
+      // -----------------------------------------------------------------------
 
       allow update:
         if request.auth != null
         && resource.data.participants is list
-        && request.auth.uid in
-           resource.data.participants
+        && request.auth.uid in resource.data.participants
         && request.resource.data.participants ==
            resource.data.participants
-        && request.resource.data.diff(resource.data)
-             .affectedKeys()
+        && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly([
                'lastMessage',
                'lastMessageTime',
@@ -349,26 +402,25 @@ service cloud.firestore {
              ]);
 
 
-      // ----------------------------------------------------------
+      // -----------------------------------------------------------------------
       // DELETE CHAT
-      // ----------------------------------------------------------
+      // -----------------------------------------------------------------------
 
       allow delete:
         if request.auth != null
         && resource.data.participants is list
-        && request.auth.uid in
-           resource.data.participants;
+        && request.auth.uid in resource.data.participants;
 
 
-      // ==========================================================
+      // =========================================================================
       // CHAT MESSAGES
-      // ==========================================================
+      // =========================================================================
 
       match /messages/{messageId} {
 
-        // --------------------------------------------------------
-        // READ
-        // --------------------------------------------------------
+        // -----------------------------------------------------------------------
+        // READ MESSAGES
+        // -----------------------------------------------------------------------
 
         allow read:
           if request.auth != null
@@ -383,9 +435,9 @@ service cloud.firestore {
              ).data.participants;
 
 
-        // --------------------------------------------------------
-        // CREATE
-        // --------------------------------------------------------
+        // -----------------------------------------------------------------------
+        // CREATE MESSAGE
+        // -----------------------------------------------------------------------
 
         allow create:
           if request.auth != null
@@ -415,9 +467,9 @@ service cloud.firestore {
              ]);
 
 
-        // --------------------------------------------------------
-        // UPDATE READ STATUS
-        // --------------------------------------------------------
+        // -----------------------------------------------------------------------
+        // MARK MESSAGE AS READ
+        // -----------------------------------------------------------------------
 
         allow update:
           if request.auth != null
@@ -430,10 +482,8 @@ service cloud.firestore {
                /databases/$(database)
                  /documents/chats/$(chatId)
              ).data.participants
-          && resource.data.senderId !=
-             request.auth.uid
-          && request.resource.data.diff(resource.data)
-               .affectedKeys()
+          && resource.data.senderId != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly([
                  'isRead',
                  'readAt'
@@ -442,9 +492,9 @@ service cloud.firestore {
           && request.resource.data.readAt is timestamp;
 
 
-        // --------------------------------------------------------
-        // DELETE
-        // --------------------------------------------------------
+        // -----------------------------------------------------------------------
+        // DELETE MESSAGE
+        // -----------------------------------------------------------------------
 
         allow delete:
           if request.auth != null
@@ -457,8 +507,7 @@ service cloud.firestore {
                /databases/$(database)
                  /documents/chats/$(chatId)
              ).data.participants
-          && resource.data.senderId ==
-             request.auth.uid;
+          && resource.data.senderId == request.auth.uid;
       }
     }
   }

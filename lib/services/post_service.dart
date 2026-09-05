@@ -158,6 +158,12 @@ class PostService {
 
   // ============================================================
   // LIKE / UNLIKE POST
+  //
+  // Like:
+  // posts/{postId}/likes/{userId}
+  //
+  // Activity:
+  // like / unlike notification
   // ============================================================
 
   static Future<void> likePost(
@@ -184,10 +190,14 @@ class PostService {
     await _firestore.runTransaction(
       (transaction) async {
         final postDoc =
-            await transaction.get(postRef);
+            await transaction.get(
+          postRef,
+        );
 
         final likeDoc =
-            await transaction.get(likeRef);
+            await transaction.get(
+          likeRef,
+        );
 
         if (!postDoc.exists) {
           throw Exception(
@@ -201,30 +211,21 @@ class PostService {
         receiverUserId =
             data['userId']?.toString() ?? '';
 
-        final currentLikes =
-            (data['likesCount'] as num?)
-                    ?.toInt() ??
-                0;
-
         if (likeDoc.exists) {
+          // ======================================================
           // UNLIKE
+          // ======================================================
+
           wasLiked = false;
 
           transaction.delete(
             likeRef,
           );
-
-          transaction.update(
-            postRef,
-            {
-              'likesCount':
-                  currentLikes > 0
-                      ? currentLikes - 1
-                      : 0,
-            },
-          );
         } else {
+          // ======================================================
           // LIKE
+          // ======================================================
+
           wasLiked = true;
 
           transaction.set(
@@ -235,45 +236,51 @@ class PostService {
                   FieldValue.serverTimestamp(),
             },
           );
-
-          transaction.update(
-            postRef,
-            {
-              'likesCount':
-                  currentLikes + 1,
-            },
-          );
         }
       },
     );
 
-    // ----------------------------------------------------------
-    // SEND LIKE NOTIFICATION
-    // ----------------------------------------------------------
+    // ==========================================================
+    // ACTIVITY NOTIFICATION
+    // ==========================================================
 
-    if (wasLiked &&
-        receiverUserId.isNotEmpty &&
-        receiverUserId != user.uid) {
-      try {
-        final userDoc =
-            await _firestore
-                .collection('users')
-                .doc(user.uid)
-                .get();
+    if (receiverUserId.isEmpty ||
+        receiverUserId == user.uid) {
+      return;
+    }
 
-        final userData =
-            userDoc.data() ?? {};
+    try {
+      final userDoc =
+          await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .get();
 
-        final username =
-            userData['username']
-                    ?.toString() ??
-                user.displayName ??
-                'user';
+      final userData =
+          userDoc.data() ?? {};
 
-        final photoUrl =
-            userData['photoUrl']
-                    ?.toString() ??
-                '';
+      final username =
+          userData['username']
+                  ?.toString()
+                  .trim()
+                  .isNotEmpty ==
+              true
+              ? userData['username']
+                  .toString()
+                  .trim()
+              : user.displayName ??
+                  'user';
+
+      final photoUrl =
+          userData['photoUrl']
+                  ?.toString()
+                  .trim() ??
+              '';
+
+      if (wasLiked) {
+        // ========================================================
+        // LIKE ACTIVITY
+        // ========================================================
 
         await NotificationService
             .createNotification(
@@ -288,16 +295,27 @@ class PostService {
           message:
               '$username liked your post',
         );
-      } catch (e) {
-        // Notification failure should not
-        // undo the successful like.
-        //
-        // Print the actual Firebase error
-        // so we can diagnose it.
-        print(
-          'LIKE NOTIFICATION ERROR: $e',
+      } else {
+        // ========================================================
+        // UNLIKE ACTIVITY
+        // ========================================================
+
+        await NotificationService
+            .createNotification(
+          receiverUserId:
+              receiverUserId,
+          type: 'unlike',
+          fromUsername:
+              username,
+          fromUserPhotoUrl:
+              photoUrl,
+          postId: postId,
+          message:
+              '$username unliked your post',
         );
       }
+    } catch (_) {
+      // Activity failure must never undo the like/unlike.
     }
   }
 
@@ -321,6 +339,22 @@ class PostService {
         .get();
 
     return likeDoc.exists;
+  }
+
+  // ============================================================
+  // REAL-TIME LIKE COUNT
+  // ============================================================
+
+  static Stream<int> getLikeCount(
+    String postId,
+  ) {
+    return _posts
+        .doc(postId)
+        .collection('likes')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs.length,
+        );
   }
 
   // ============================================================
@@ -427,10 +461,6 @@ class PostService {
                 ?.toString() ??
             '';
 
-    // ----------------------------------------------------------
-    // CREATE COMMENT
-    // ----------------------------------------------------------
-
     await commentRef.set({
       'userId': user.uid,
       'username': username,
@@ -440,10 +470,6 @@ class PostService {
       'createdAt':
           FieldValue.serverTimestamp(),
     });
-
-    // ----------------------------------------------------------
-    // UPDATE COMMENT COUNT
-    // ----------------------------------------------------------
 
     try {
       await postRef.update({
@@ -459,10 +485,6 @@ class PostService {
         'Comment count update failed: $e',
       );
     }
-
-    // ----------------------------------------------------------
-    // SEND COMMENT NOTIFICATION
-    // ----------------------------------------------------------
 
     if (receiverUserId.isNotEmpty &&
         receiverUserId != user.uid) {
@@ -480,11 +502,7 @@ class PostService {
           message:
               '$username commented on your post',
         );
-      } catch (e) {
-        print(
-          'COMMENT NOTIFICATION ERROR: $e',
-        );
-      }
+      } catch (_) {}
     }
 
     return commentRef.id;

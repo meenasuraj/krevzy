@@ -1,7 +1,14 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../models/notification.dart';
+import '../models/post.dart';
+import '../services/chat_lock_service.dart';
+import '../services/chat_service.dart';
 import '../services/notification_service.dart';
+import '../widgets/post_card.dart';
+import 'chat_screen.dart';
+import 'public_profile_screen.dart';
 
 class NotificationsScreen extends StatelessWidget {
   const NotificationsScreen({super.key});
@@ -36,6 +43,8 @@ class NotificationsScreen extends StatelessWidget {
         return Icons.comment;
       case 'follow':
         return Icons.person_add;
+      case 'message':
+        return Icons.chat_bubble_rounded;
       case 'system':
         return Icons.info_outline;
       default:
@@ -43,7 +52,9 @@ class NotificationsScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _createTestNotification(BuildContext context) async {
+  Future<void> _createTestNotification(
+    BuildContext context,
+  ) async {
     try {
       await NotificationService.createTestNotification();
 
@@ -69,7 +80,9 @@ class NotificationsScreen extends StatelessWidget {
     }
   }
 
-  Future<void> _markAllRead(BuildContext context) async {
+  Future<void> _markAllRead(
+    BuildContext context,
+  ) async {
     try {
       await NotificationService.markAllAsRead();
 
@@ -87,12 +100,158 @@ class NotificationsScreen extends StatelessWidget {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Error: $e',
-          ),
+          content: Text('Error: $e'),
         ),
       );
     }
+  }
+
+  Future<void> _openNotification(
+    BuildContext context,
+    AppNotification notification,
+  ) async {
+    // Mark read first, but don't block navigation if this write fails.
+    try {
+      await NotificationService.markAsRead(
+        notification.id,
+      );
+    } catch (e) {
+      debugPrint(
+        'Notification read update failed: $e',
+      );
+    }
+
+    if (!context.mounted) return;
+
+    switch (notification.type) {
+      case 'message':
+        await _openMessageNotification(
+          context,
+          notification,
+        );
+        return;
+
+      case 'follow':
+        if (notification.fromUserId.isEmpty) {
+          return;
+        }
+
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => PublicProfileScreen(
+              userId: notification.fromUserId,
+            ),
+          ),
+        );
+        return;
+
+      case 'like':
+      case 'comment':
+        if (notification.postId.isEmpty) {
+          return;
+        }
+
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => _PostNotificationScreen(
+              postId: notification.postId,
+            ),
+          ),
+        );
+        return;
+
+      default:
+        return;
+    }
+  }
+
+  Future<void> _openMessageNotification(
+    BuildContext context,
+    AppNotification notification,
+  ) async {
+    if (notification.fromUserId.isEmpty) {
+      return;
+    }
+
+    final currentUserId =
+        ChatService.currentUserId;
+
+    if (notification.fromUserId == currentUserId) {
+      return;
+    }
+
+    final chatId = notification.chatId.isNotEmpty
+        ? notification.chatId
+        : ChatService.getChatId(
+            userId1: currentUserId,
+            userId2: notification.fromUserId,
+          );
+
+    String displayName =
+        notification.fromUsername.isNotEmpty
+            ? '@${notification.fromUsername}'
+            : 'Gapshap User';
+
+    try {
+      final userSnapshot = await FirebaseFirestore
+          .instance
+          .collection('users')
+          .doc(notification.fromUserId)
+          .get();
+
+      final userData = userSnapshot.data();
+
+      final name =
+          userData?['name']?.toString().trim() ?? '';
+
+      final username =
+          userData?['username']?.toString().trim() ?? '';
+
+      if (name.isNotEmpty) {
+        displayName = name;
+      } else if (username.isNotEmpty) {
+        displayName = '@$username';
+      }
+    } catch (e) {
+      debugPrint(
+        'Notification sender lookup failed: $e',
+      );
+    }
+
+    final pinHashes =
+        await ChatLockService.loadPinHashes();
+
+    if (!context.mounted) return;
+
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(
+          chatId: chatId,
+          name: displayName,
+          initialPinHash: pinHashes[chatId],
+          onPinSet: (pinHash) async {
+            final updated =
+                Map<String, String>.from(pinHashes);
+
+            updated[chatId] = pinHash;
+
+            await ChatLockService.savePinHashes(
+              updated,
+            );
+          },
+          onLockRemoved: () async {
+            final updated =
+                Map<String, String>.from(pinHashes);
+
+            updated.remove(chatId);
+
+            await ChatLockService.savePinHashes(
+              updated,
+            );
+          },
+        ),
+      ),
+    );
   }
 
   @override
@@ -103,20 +262,25 @@ class NotificationsScreen extends StatelessWidget {
         actions: [
           IconButton(
             tooltip: 'Test notification',
-            icon: const Icon(Icons.bug_report_outlined),
-            onPressed: () => _createTestNotification(context),
+            icon: const Icon(
+              Icons.bug_report_outlined,
+            ),
+            onPressed: () =>
+                _createTestNotification(context),
           ),
           IconButton(
             tooltip: 'Mark all as read',
             icon: const Icon(Icons.done_all),
-            onPressed: () => _markAllRead(context),
+            onPressed: () =>
+                _markAllRead(context),
           ),
         ],
       ),
       body: StreamBuilder<List<AppNotification>>(
         stream: NotificationService.getNotifications(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
             return const Center(
               child: CircularProgressIndicator(),
             );
@@ -134,7 +298,8 @@ class NotificationsScreen extends StatelessWidget {
             );
           }
 
-          final notifications = snapshot.data ?? [];
+          final notifications =
+              snapshot.data ?? [];
 
           if (notifications.isEmpty) {
             return Center(
@@ -157,13 +322,15 @@ class NotificationsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 6),
                     const Text(
-                      'Likes and comments will appear here.',
+                      'Likes, comments, follows and messages will appear here.',
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 24),
                     FilledButton.icon(
                       onPressed: () =>
-                          _createTestNotification(context),
+                          _createTestNotification(
+                        context,
+                      ),
                       icon: const Icon(
                         Icons.bug_report_outlined,
                       ),
@@ -182,7 +349,8 @@ class NotificationsScreen extends StatelessWidget {
             separatorBuilder: (_, _) =>
                 const Divider(height: 1),
             itemBuilder: (context, index) {
-              final notification = notifications[index];
+              final notification =
+                  notifications[index];
 
               return _NotificationTile(
                 notification: notification,
@@ -191,6 +359,11 @@ class NotificationsScreen extends StatelessWidget {
                 ),
                 timeAgo: _timeAgo(
                   notification.createdAt,
+                ),
+                onTap: () =>
+                    _openNotification(
+                  context,
+                  notification,
                 ),
               );
             },
@@ -205,27 +378,19 @@ class _NotificationTile extends StatelessWidget {
   final AppNotification notification;
   final IconData icon;
   final String timeAgo;
+  final VoidCallback onTap;
 
   const _NotificationTile({
     required this.notification,
     required this.icon,
     required this.timeAgo,
+    required this.onTap,
   });
-
-  Future<void> _markRead() async {
-    if (notification.isRead) return;
-
-    try {
-      await NotificationService.markAsRead(
-        notification.id,
-      );
-    } catch (_) {}
-  }
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: _markRead,
+      onTap: onTap,
       child: Container(
         color: notification.isRead
             ? null
@@ -247,14 +412,17 @@ class _NotificationTile extends StatelessWidget {
                           notification.fromUserPhotoUrl,
                         )
                       : null,
-              child: notification.fromUserPhotoUrl.isEmpty
-                  ? Text(
-                      notification.fromUsername.isNotEmpty
-                          ? notification.fromUsername[0]
-                              .toUpperCase()
-                          : '?',
-                    )
-                  : null,
+              child:
+                  notification.fromUserPhotoUrl.isEmpty
+                      ? Text(
+                          notification.fromUsername
+                                  .isNotEmpty
+                              ? notification
+                                  .fromUsername[0]
+                                  .toUpperCase()
+                              : '?',
+                        )
+                      : null,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -265,9 +433,10 @@ class _NotificationTile extends StatelessWidget {
                   Text(
                     notification.message,
                     style: TextStyle(
-                      fontWeight: notification.isRead
-                          ? FontWeight.normal
-                          : FontWeight.w600,
+                      fontWeight:
+                          notification.isRead
+                              ? FontWeight.normal
+                              : FontWeight.w600,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -286,6 +455,84 @@ class _NotificationTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// POST NOTIFICATION DESTINATION
+// ============================================================================
+
+class _PostNotificationScreen
+    extends StatelessWidget {
+  final String postId;
+
+  const _PostNotificationScreen({
+    required this.postId,
+  });
+
+  Future<Post?> _loadPost() async {
+    final snapshot = await FirebaseFirestore
+        .instance
+        .collection('posts')
+        .doc(postId)
+        .get();
+
+    if (!snapshot.exists) {
+      return null;
+    }
+
+    return Post.fromFirestore(snapshot);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Post'),
+      ),
+      body: FutureBuilder<Post?>(
+        future: _loadPost(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState ==
+              ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          if (snapshot.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Unable to load this post.\n\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
+
+          final post = snapshot.data;
+
+          if (post == null) {
+            return const Center(
+              child: Text(
+                'This post is no longer available.',
+              ),
+            );
+          }
+
+          return ListView(
+            padding: const EdgeInsets.symmetric(
+              vertical: 12,
+            ),
+            children: [
+              PostCard(post: post),
+            ],
+          );
+        },
       ),
     );
   }

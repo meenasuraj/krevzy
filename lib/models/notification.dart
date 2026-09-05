@@ -7,6 +7,7 @@ class AppNotification {
   final String fromUsername;
   final String fromUserPhotoUrl;
   final String postId;
+  final String chatId;
   final String message;
   final bool isRead;
   final DateTime createdAt;
@@ -18,6 +19,7 @@ class AppNotification {
     required this.fromUsername,
     required this.fromUserPhotoUrl,
     required this.postId,
+    required this.chatId,
     required this.message,
     required this.isRead,
     required this.createdAt,
@@ -36,6 +38,7 @@ class AppNotification {
       fromUsername: data['fromUsername']?.toString() ?? '',
       fromUserPhotoUrl: data['fromUserPhotoUrl']?.toString() ?? '',
       postId: data['postId']?.toString() ?? '',
+      chatId: data['chatId']?.toString() ?? '',
       message: data['message']?.toString() ?? '',
       isRead: data['isRead'] == true,
       createdAt: timestamp is Timestamp

@@ -30,8 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      await FirebaseAuth.instance
-          .signInWithEmailAndPassword(
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
@@ -51,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint(
         'Login Error Code: ${e.code}',
       );
+
       debugPrint(
         'Login Error Message: ${e.message}',
       );
@@ -370,12 +370,20 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 25),
 
+                    // FIX:
+                    // Flexible prevents the Row from overflowing
+                    // on narrow screens.
                     Row(
                       mainAxisAlignment:
                           MainAxisAlignment.center,
                       children: [
-                        const Text(
-                          'New to Gapshap? ',
+                        Flexible(
+                          child: Text(
+                            'New to Gapshap? ',
+                            textAlign: TextAlign.end,
+                            overflow:
+                                TextOverflow.ellipsis,
+                          ),
                         ),
                         TextButton(
                           onPressed: _loading

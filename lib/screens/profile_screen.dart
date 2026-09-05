@@ -763,11 +763,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   Navigator.pop(dialogContext);
                 }
 
-                if (!mounted) {
+                if (!dialogContext.mounted) {
                   return;
                 }
 
-                ScaffoldMessenger.of(context).showSnackBar(
+                ScaffoldMessenger.of(dialogContext).showSnackBar(
                   const SnackBar(
                     content: Text('Profile updated successfully.'),
                   ),

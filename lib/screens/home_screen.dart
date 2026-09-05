@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 
 import '../models/post.dart';
+import '../services/notification_service.dart';
 import '../services/post_service.dart';
 import '../widgets/post_card.dart';
 import 'chats_screen.dart';
-// import 'comments_screen.dart';
 import 'create_post_screen.dart';
+import 'like_activities_screen.dart';
+import 'notes_screen.dart';
 import 'notifications_screen.dart';
 import 'profile_screen.dart';
 import 'search_screen.dart';
+import 'security_center_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -49,6 +52,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  void _openNotes() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const NotesScreen(),
+      ),
+    );
+  }
+
+  void _openLikeActivities() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const LikeActivitiesScreen(),
+      ),
+    );
+  }
+
+  void _openSecurityCenter() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => const SecurityCenterScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -61,25 +88,99 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
-            tooltip: 'Likes',
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Likes activity coming soon',
-                  ),
-                ),
-              );
-            },
+            tooltip: 'Personal Notes',
+            onPressed: _openNotes,
+            icon: const Icon(
+              Icons.note_alt_outlined,
+            ),
+          ),
+
+          IconButton(
+            tooltip: 'Like Activities',
+            onPressed: _openLikeActivities,
             icon: const Icon(
               Icons.favorite_border_rounded,
             ),
           ),
+
+          StreamBuilder<int>(
+            stream: NotificationService.getUnreadCount(),
+            builder: (context, snapshot) {
+              final unreadCount =
+                  snapshot.data ?? 0;
+
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  IconButton(
+                    tooltip: unreadCount > 0
+                        ? '$unreadCount unread notifications'
+                        : 'Notifications',
+                    onPressed: _openNotifications,
+                    icon: Icon(
+                      unreadCount > 0
+                          ? Icons.notifications_rounded
+                          : Icons
+                              .notifications_none_rounded,
+                    ),
+                  ),
+                  if (unreadCount > 0)
+                    Positioned(
+                      right: 5,
+                      top: 5,
+                      child: Container(
+                        constraints:
+                            const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        padding:
+                            const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .error,
+                          borderRadius:
+                              BorderRadius.circular(
+                            10,
+                          ),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surface,
+                            width: 1.5,
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          unreadCount > 99
+                              ? '99+'
+                              : unreadCount.toString(),
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onError,
+                            fontSize: 10,
+                            fontWeight:
+                                FontWeight.bold,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+
           IconButton(
-            tooltip: 'Notifications',
-            onPressed: _openNotifications,
+            tooltip: 'Security Center',
+            onPressed: _openSecurityCenter,
             icon: const Icon(
-              Icons.notifications_none_rounded,
+              Icons.shield_outlined,
             ),
           ),
         ],
@@ -219,15 +320,12 @@ class _StoriesSection extends StatelessWidget {
           horizontal: 16,
           vertical: 12,
         ),
-        scrollDirection:
-            Axis.horizontal,
+        scrollDirection: Axis.horizontal,
         itemCount: stories.length,
         separatorBuilder: (_, _) =>
             const SizedBox(width: 18),
-        itemBuilder:
-            (context, index) {
-          final story =
-              stories[index];
+        itemBuilder: (context, index) {
+          final story = stories[index];
 
           return SizedBox(
             width: 68,
@@ -248,8 +346,7 @@ class _StoriesSection extends StatelessWidget {
                   maxLines: 1,
                   overflow:
                       TextOverflow.ellipsis,
-                  style:
-                      const TextStyle(
+                  style: const TextStyle(
                     fontSize: 12,
                   ),
                 ),
@@ -274,8 +371,7 @@ class _RealPostsFeed
   Widget build(BuildContext context) {
     return StreamBuilder<List<Post>>(
       stream: PostService.getPosts(),
-      builder:
-          (context, snapshot) {
+      builder: (context, snapshot) {
         if (snapshot.connectionState ==
             ConnectionState.waiting) {
           return const SliverFillRemaining(
@@ -293,9 +389,7 @@ class _RealPostsFeed
             child: Center(
               child: Padding(
                 padding:
-                    const EdgeInsets.all(
-                  24,
-                ),
+                    const EdgeInsets.all(24),
                 child: Text(
                   'Posts load nahi ho sake.\n\n'
                   '${snapshot.error}',
@@ -328,8 +422,7 @@ class _RealPostsFeed
                   ),
                   Text(
                     'No posts yet',
-                    style:
-                        TextStyle(
+                    style: TextStyle(
                       fontSize: 18,
                       fontWeight:
                           FontWeight.bold,
@@ -361,8 +454,7 @@ class _RealPostsFeed
                 post: post,
               );
             },
-            childCount:
-                posts.length,
+            childCount: posts.length,
           ),
         );
       },

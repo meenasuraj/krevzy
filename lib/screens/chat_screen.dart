@@ -1,4 +1,6 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
@@ -23,12 +25,29 @@ class ChatScreen extends StatefulWidget {
   });
 
   @override
-  State<ChatScreen> createState() => _ChatScreenState();
+  State<ChatScreen> createState() =>
+      _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
-  final TextEditingController _messageController =
+class _ChatScreenState
+    extends State<ChatScreen> {
+  final TextEditingController
+      _messageController =
       TextEditingController();
+
+  final FocusNode _messageFocusNode =
+      FocusNode();
+
+  late final Stream<
+      QuerySnapshot<Map<String, dynamic>>>
+      _messagesStream;
+
+  late final Stream<Map<String, String>>
+      _typingStream;
+
+  Timer? _thinkingTimer;
+
+  Timer? _typingDebounceTimer;
 
   String? _chatLockPinHash;
 
@@ -36,65 +55,229 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isUnlocked = false;
   bool _isSending = false;
   bool _isMarkingRead = false;
-  bool _isTyping = false;
+  // bool _isTyping = false;
+
+  String _myTypingState = 'none';
 
   @override
   void initState() {
     super.initState();
 
-    _chatLockPinHash = widget.initialPinHash;
+    _chatLockPinHash =
+        widget.initialPinHash;
 
-    _isChatLocked = _chatLockPinHash != null;
-    _isUnlocked = !_isChatLocked;
+    _isChatLocked =
+        _chatLockPinHash != null;
 
-    _messageController.addListener(_handleTypingChanged);
+    _isUnlocked =
+        !_isChatLocked;
 
-    _markChatAsRead();
+    _messagesStream =
+        ChatService.getMessages(
+      widget.chatId,
+    );
+
+    _typingStream =
+        ChatService.getTypingUsers(
+      widget.chatId,
+    );
+
+    _messageController.addListener(
+      _handleTypingChanged,
+    );
+
+    _messageFocusNode.addListener(
+      _handleFocusChanged,
+    );
+
+    // Opening an unlocked chat marks
+    // existing unread messages as read.
+    if (_isUnlocked) {
+      _markChatAsRead();
+    }
   }
 
   @override
   void dispose() {
-    _setTyping(false);
-    _messageController.removeListener(_handleTypingChanged);
+    _typingDebounceTimer?.cancel();
+    _thinkingTimer?.cancel();
+
+    _messageController.removeListener(
+      _handleTypingChanged,
+    );
+
+    _messageFocusNode.removeListener(
+      _handleFocusChanged,
+    );
+
+    // Clear our status when leaving.
+    _clearTypingState();
+
     _messageController.dispose();
+    _messageFocusNode.dispose();
+
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------------
-  // TYPING
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // TYPING + THINKING
+  // ===========================================================================
 
   void _handleTypingChanged() {
-    final hasText =
-        _messageController.text.trim().isNotEmpty;
-
-    if (hasText == _isTyping) {
+    if (!_isUnlocked) {
       return;
     }
 
-    _setTyping(hasText);
+    final text =
+        _messageController.text.trim();
+
+    final hasText = text.isNotEmpty;
+
+    _typingDebounceTimer?.cancel();
+
+    if (hasText) {
+      // User is actively typing.
+      _thinkingTimer?.cancel();
+
+      _setMyTypingState(
+        'typing',
+      );
+
+      // Small debounce so rapid keyboard
+      // changes don't cause unnecessary writes.
+      _typingDebounceTimer =
+          Timer(
+        const Duration(
+          milliseconds: 350,
+        ),
+        () {},
+      );
+
+      return;
+    }
+
+    // Text is empty.
+    //
+    // If the input still has focus, the user
+    // can be considered to be thinking.
+    if (_messageFocusNode.hasFocus) {
+      _startThinking();
+    } else {
+      _clearTypingState();
+    }
   }
 
-  Future<void> _setTyping(bool typing) async {
-    if (_isTyping == typing) {
+  void _handleFocusChanged() {
+    if (!_isUnlocked) {
       return;
     }
 
-    _isTyping = typing;
+    if (_messageFocusNode.hasFocus) {
+      final hasText =
+          _messageController.text
+              .trim()
+              .isNotEmpty;
+
+      if (!hasText) {
+        _startThinking();
+      }
+    } else {
+      _clearTypingState();
+    }
+  }
+
+  void _startThinking() {
+    if (!_isUnlocked) {
+      return;
+    }
+
+    _thinkingTimer?.cancel();
+
+    _setMyTypingState(
+      'thinking',
+    );
+
+    // Thinking lasts exactly 60 seconds.
+    _thinkingTimer = Timer(
+      const Duration(seconds: 60),
+      () {
+        _thinkingTimer = null;
+
+        if (!mounted) {
+          return;
+        }
+
+        _clearTypingState();
+      },
+    );
+  }
+
+  Future<void> _setMyTypingState(
+    String state,
+  ) async {
+    if (!_isUnlocked) {
+      return;
+    }
+
+    if (state != 'typing' &&
+        state != 'thinking' &&
+        state != 'none') {
+      return;
+    }
+
+    if (_myTypingState == state) {
+      return;
+    }
+
+    _myTypingState = state;
+
+    // if (state == 'typing') {
+    //   _isTyping = true;
+    // } else {
+    //   _isTyping = false;
+    // }
 
     try {
-      await ChatService.setTyping(
+      await ChatService.setTypingState(
         chatId: widget.chatId,
-        isTyping: typing,
+        state: state,
       );
     } catch (e) {
-      debugPrint('Typing status update failed: $e');
+      debugPrint(
+        'Typing state update failed: $e',
+      );
     }
   }
 
-  // ---------------------------------------------------------------------------
+  Future<void> _clearTypingState() async {
+    _thinkingTimer?.cancel();
+    _thinkingTimer = null;
+
+    _typingDebounceTimer?.cancel();
+    _typingDebounceTimer = null;
+
+    if (_myTypingState == 'none') {
+      return;
+    }
+
+    _myTypingState = 'none';
+    // _isTyping = false;
+
+    try {
+      await ChatService.setTypingState(
+        chatId: widget.chatId,
+        state: 'none',
+      );
+    } catch (e) {
+      debugPrint(
+        'Clear typing state failed: $e',
+      );
+    }
+  }
+
+  // ===========================================================================
   // MARK CHAT AS READ
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _markChatAsRead() async {
     if (_isMarkingRead) {
@@ -104,22 +287,29 @@ class _ChatScreenState extends State<ChatScreen> {
     _isMarkingRead = true;
 
     try {
-      await ChatService.markChatAsRead(widget.chatId);
+      await ChatService.markChatAsRead(
+        widget.chatId,
+      );
     } catch (e) {
-      debugPrint('Mark chat as read failed: $e');
+      debugPrint(
+        'Mark chat as read failed: $e',
+      );
     } finally {
       _isMarkingRead = false;
     }
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // SEND MESSAGE
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _sendMessage() async {
-    final text = _messageController.text.trim();
+    final text =
+        _messageController.text.trim();
 
-    if (text.isEmpty || _isSending) {
+    if (text.isEmpty ||
+        _isSending ||
+        !_isUnlocked) {
       return;
     }
 
@@ -127,7 +317,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _isSending = true;
     });
 
-    await _setTyping(false);
+    await _clearTypingState();
 
     try {
       await ChatService.sendMessage(
@@ -137,10 +327,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
       if (mounted) {
         _messageController.clear();
+        _messageFocusNode.requestFocus();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        ScaffoldMessenger.of(context)
+            .showSnackBar(
           SnackBar(
             content: Text(
               'Message send failed: $e',
@@ -157,9 +349,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // SET CHAT LOCK
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _setChatLock() async {
     final pinController =
@@ -168,7 +360,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final confirmController =
         TextEditingController();
 
-    final result = await showDialog<bool>(
+    final result =
+        await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -176,14 +369,18 @@ class _ChatScreenState extends State<ChatScreen> {
             'Set Chat Lock 🔒',
           ),
           content: Column(
-            mainAxisSize: MainAxisSize.min,
+            mainAxisSize:
+                MainAxisSize.min,
             children: [
               const Text(
                 'Create a PIN for this chat.',
               ),
-              const SizedBox(height: 15),
+              const SizedBox(
+                height: 15,
+              ),
               TextField(
-                controller: pinController,
+                controller:
+                    pinController,
                 keyboardType:
                     TextInputType.number,
                 obscureText: true,
@@ -197,7 +394,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       OutlineInputBorder(),
                 ),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(
+                height: 10,
+              ),
               TextField(
                 controller:
                     confirmController,
@@ -207,8 +406,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 maxLength: 6,
                 decoration:
                     const InputDecoration(
-                  labelText: 'Confirm PIN',
-                  prefixIcon: Icon(
+                  labelText:
+                      'Confirm PIN',
+                  prefixIcon:
+                      Icon(
                     Icons.lock_outline,
                   ),
                   border:
@@ -231,10 +432,13 @@ class _ChatScreenState extends State<ChatScreen> {
             ElevatedButton(
               onPressed: () {
                 final pin =
-                    pinController.text.trim();
+                    pinController.text
+                        .trim();
 
                 final confirm =
-                    confirmController.text.trim();
+                    confirmController
+                        .text
+                        .trim();
 
                 if (pin.length < 4) {
                   ScaffoldMessenger.of(
@@ -275,7 +479,11 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
 
-    if (!mounted) return;
+    if (!mounted) {
+      pinController.dispose();
+      confirmController.dispose();
+      return;
+    }
 
     if (result == true) {
       final pin =
@@ -284,12 +492,27 @@ class _ChatScreenState extends State<ChatScreen> {
       final pinHash =
           ChatLockService.hashPin(pin);
 
-      await widget.onPinSet(pinHash);
+      await widget.onPinSet(
+        pinHash,
+      );
 
-      if (!mounted) return;
+      if (!mounted) {
+        pinController.dispose();
+        confirmController.dispose();
+        return;
+      }
+
+      await _clearTypingState();
+
+      if (!mounted) {
+        pinController.dispose();
+        confirmController.dispose();
+        return;
+      }
 
       setState(() {
-        _chatLockPinHash = pinHash;
+        _chatLockPinHash =
+            pinHash;
         _isChatLocked = true;
         _isUnlocked = false;
       });
@@ -297,8 +520,9 @@ class _ChatScreenState extends State<ChatScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(
         const SnackBar(
-          content:
-              Text('Chat Lock enabled 🔒'),
+          content: Text(
+            'Chat Lock enabled 🔒',
+          ),
         ),
       );
     }
@@ -307,23 +531,27 @@ class _ChatScreenState extends State<ChatScreen> {
     confirmController.dispose();
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // UNLOCK CHAT
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _unlockChat() async {
     final pinController =
         TextEditingController();
 
-    final result = await showDialog<bool>(
+    final result =
+        await showDialog<bool>(
       context: context,
       barrierDismissible: false,
       builder: (context) {
         return AlertDialog(
           title:
-              const Text('Chat Locked 🔒'),
+              const Text(
+            'Chat Locked 🔒',
+          ),
           content: TextField(
-            controller: pinController,
+            controller:
+                pinController,
             keyboardType:
                 TextInputType.number,
             obscureText: true,
@@ -340,7 +568,9 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             onSubmitted: (_) {
               final enteredPin =
-                  pinController.text.trim();
+                  pinController
+                      .text
+                      .trim();
 
               if (_verifyPin(
                 enteredPin,
@@ -366,7 +596,9 @@ class _ChatScreenState extends State<ChatScreen> {
             ElevatedButton(
               onPressed: () {
                 final enteredPin =
-                    pinController.text.trim();
+                    pinController
+                        .text
+                        .trim();
 
                 if (_verifyPin(
                   enteredPin,
@@ -395,9 +627,14 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
 
-    pinController.dispose();
+    if (!mounted) {
+      pinController.dispose();
+      return;
+    }
 
-    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      pinController.dispose();
+    });
 
     if (result == true) {
       setState(() {
@@ -420,15 +657,16 @@ class _ChatScreenState extends State<ChatScreen> {
         _chatLockPinHash;
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // REMOVE CHAT LOCK
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Future<void> _removeChatLock() async {
     final pinController =
         TextEditingController();
 
-    final result = await showDialog<bool>(
+    final result =
+        await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -436,7 +674,8 @@ class _ChatScreenState extends State<ChatScreen> {
             'Remove Chat Lock',
           ),
           content: TextField(
-            controller: pinController,
+            controller:
+                pinController,
             keyboardType:
                 TextInputType.number,
             obscureText: true,
@@ -465,7 +704,9 @@ class _ChatScreenState extends State<ChatScreen> {
             ElevatedButton(
               onPressed: () {
                 final pin =
-                    pinController.text.trim();
+                    pinController
+                        .text
+                        .trim();
 
                 if (!_verifyPin(pin)) {
                   ScaffoldMessenger.of(
@@ -485,7 +726,8 @@ class _ChatScreenState extends State<ChatScreen> {
                   true,
                 );
               },
-              child: const Text(
+              child:
+                  const Text(
                 'Remove Lock',
               ),
             ),
@@ -496,12 +738,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
     pinController.dispose();
 
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
 
     if (result == true) {
       await widget.onLockRemoved();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _chatLockPinHash = null;
@@ -512,16 +758,17 @@ class _ChatScreenState extends State<ChatScreen> {
       ScaffoldMessenger.of(context)
           .showSnackBar(
         const SnackBar(
-          content:
-              Text('Chat Lock removed 🔓'),
+          content: Text(
+            'Chat Lock removed 🔓',
+          ),
         ),
       );
     }
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // CHAT MENU
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   void _showChatMenu() {
     showModalBottomSheet(
@@ -559,7 +806,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 leading: const Icon(
                   Icons.info_outline,
                 ),
-                title: const Text(
+                title:
+                    const Text(
                   'Chat Info',
                 ),
                 onTap: () {
@@ -585,24 +833,29 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // FORMAT TIME
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   String _formatTime(dynamic value) {
     if (value is Timestamp) {
       final dateTime =
           value.toDate();
 
-      final hour = dateTime.hour > 12
-          ? dateTime.hour - 12
-          : dateTime.hour == 0
-              ? 12
-              : dateTime.hour;
+      final hour =
+          dateTime.hour > 12
+              ? dateTime.hour - 12
+              : dateTime.hour == 0
+                  ? 12
+                  : dateTime.hour;
 
-      final minute = dateTime.minute
-          .toString()
-          .padLeft(2, '0');
+      final minute =
+          dateTime.minute
+              .toString()
+              .padLeft(
+                2,
+                '0',
+              );
 
       final period =
           dateTime.hour >= 12
@@ -615,45 +868,59 @@ class _ChatScreenState extends State<ChatScreen> {
     return '';
   }
 
-  // ---------------------------------------------------------------------------
-  // TYPING INDICATOR
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // TYPING / THINKING INDICATOR
+  // ===========================================================================
 
   Widget _buildTypingIndicator() {
     final currentUserId =
-        FirebaseAuth.instance.currentUser?.uid;
+        FirebaseAuth
+            .instance
+            .currentUser
+            ?.uid;
 
     if (currentUserId == null) {
       return const SizedBox.shrink();
     }
 
-    return StreamBuilder<Map<String, bool>>(
-      stream:
-          ChatService.getTypingUsers(
-        widget.chatId,
-      ),
-      builder: (context, snapshot) {
+    return StreamBuilder<
+        Map<String, String>>(
+      stream: _typingStream,
+      builder:
+          (context, snapshot) {
         if (!snapshot.hasData) {
           return const SizedBox.shrink();
         }
 
-        final typingUsers =
+        final states =
             snapshot.data ?? {};
 
-        bool someoneElseTyping = false;
+        String otherState =
+            'none';
 
         for (final entry
-            in typingUsers.entries) {
-          if (entry.key != currentUserId &&
-              entry.value == true) {
-            someoneElseTyping = true;
-            break;
+            in states.entries) {
+          if (entry.key !=
+              currentUserId) {
+            if (entry.value ==
+                    'typing' ||
+                entry.value ==
+                    'thinking') {
+              otherState =
+                  entry.value;
+              break;
+            }
           }
         }
 
-        if (!someoneElseTyping) {
+        if (otherState ==
+            'none') {
           return const SizedBox.shrink();
         }
+
+        final isTyping =
+            otherState ==
+                'typing';
 
         return Padding(
           padding:
@@ -670,28 +937,41 @@ class _ChatScreenState extends State<ChatScreen> {
               mainAxisSize:
                   MainAxisSize.min,
               children: [
-                const SizedBox(
-                  width: 14,
-                  height: 14,
-                  child:
-                      CircularProgressIndicator(
-                    strokeWidth: 2,
-                  ),
+                Icon(
+                  isTyping
+                      ? Icons.edit
+                      : Icons.psychology,
+                  size: 17,
                 ),
                 const SizedBox(
-                  width: 8,
+                  width: 7,
                 ),
                 Text(
-                  '${widget.name} is typing...',
-                  style: TextStyle(
-                    color: Theme.of(
+                  isTyping
+                      ? '${widget.name} is typing...'
+                      : '${widget.name} is thinking...',
+                  style:
+                      TextStyle(
+                    color:
+                        Theme.of(
                       context,
                     )
-                        .colorScheme
-                        .onSurfaceVariant,
+                            .colorScheme
+                            .onSurfaceVariant,
                     fontSize: 13,
                     fontStyle:
                         FontStyle.italic,
+                  ),
+                ),
+                const SizedBox(
+                  width: 6,
+                ),
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child:
+                      CircularProgressIndicator(
+                    strokeWidth: 1.5,
                   ),
                 ),
               ],
@@ -702,9 +982,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // LOCKED VIEW
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Widget _buildLockedView() {
     return Center(
@@ -747,7 +1027,8 @@ class _ChatScreenState extends State<ChatScreen> {
               icon: const Icon(
                 Icons.lock_open,
               ),
-              label: const Text(
+              label:
+                  const Text(
                 'Unlock Chat',
               ),
             ),
@@ -757,23 +1038,20 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // MESSAGES
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Widget _buildMessages() {
     final currentUserId =
-        FirebaseAuth.instance
+        FirebaseAuth
+            .instance
             .currentUser
             ?.uid;
 
     return StreamBuilder<
-        QuerySnapshot<
-            Map<String, dynamic>>>(
-      stream:
-          ChatService.getMessages(
-        widget.chatId,
-      ),
+        QuerySnapshot<Map<String, dynamic>>>(
+      stream: _messagesStream,
       builder:
           (context, snapshot) {
         if (snapshot.hasError) {
@@ -797,6 +1075,35 @@ class _ChatScreenState extends State<ChatScreen> {
         final messages =
             snapshot.data?.docs ?? [];
 
+        // If the chat is open and a new
+        // incoming message arrives, mark
+        // it as read immediately.
+        if (_isUnlocked &&
+            currentUserId != null) {
+          final hasUnreadIncoming =
+              messages.any(
+            (doc) {
+              final data =
+                  doc.data();
+
+              final senderId =
+                  data['senderId']
+                          ?.toString() ??
+                      '';
+
+              return senderId !=
+                      currentUserId &&
+                  data['isRead'] !=
+                      true;
+            },
+          );
+
+          if (hasUnreadIncoming &&
+              !_isMarkingRead) {
+            _markChatAsRead();
+          }
+        }
+
         if (messages.isEmpty) {
           return const Center(
             child: Text(
@@ -809,13 +1116,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
         return ListView.builder(
           padding:
-              const EdgeInsets.all(16),
+              const EdgeInsets.all(
+            16,
+          ),
           itemCount:
               messages.length,
           itemBuilder:
               (context, index) {
             final message =
-                messages[index].data();
+                messages[index]
+                    .data();
 
             final senderId =
                 message['senderId']
@@ -837,7 +1147,8 @@ class _ChatScreenState extends State<ChatScreen> {
             );
 
             final isRead =
-                message['isRead'] == true;
+                message['isRead'] ==
+                    true;
 
             return Align(
               alignment: isMe
@@ -860,10 +1171,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 decoration:
                     BoxDecoration(
                   color: isMe
-                      ? Theme.of(context)
+                      ? Theme.of(
+                          context,
+                        )
                           .colorScheme
                           .primary
-                      : Theme.of(context)
+                      : Theme.of(
+                          context,
+                        )
                           .colorScheme
                           .surfaceContainerHighest,
                   borderRadius:
@@ -888,14 +1203,14 @@ class _ChatScreenState extends State<ChatScreen> {
                         fontSize: 16,
                       ),
                     ),
-                    if (time.isNotEmpty) ...[
-                      const SizedBox(
-                        height: 4,
-                      ),
-                      Row(
-                        mainAxisSize:
-                            MainAxisSize.min,
-                        children: [
+                    const SizedBox(
+                      height: 4,
+                    ),
+                    Row(
+                      mainAxisSize:
+                          MainAxisSize.min,
+                      children: [
+                        if (time.isNotEmpty)
                           Text(
                             time,
                             style:
@@ -908,27 +1223,26 @@ class _ChatScreenState extends State<ChatScreen> {
                               fontSize: 11,
                             ),
                           ),
-                          if (isMe) ...[
+                        if (isMe) ...[
+                          if (time.isNotEmpty)
                             const SizedBox(
                               width: 4,
                             ),
-                            Icon(
-                              isRead
-                                  ? Icons
-                                      .done_all
-                                  : Icons
-                                      .done,
-                              size: 15,
-                              color: isRead
-                                  ? Colors
-                                      .lightBlueAccent
-                                  : Colors
-                                      .white70,
-                            ),
-                          ],
+                          Icon(
+                            isRead
+                                ? Icons
+                                    .done_all
+                                : Icons.done,
+                            size: 15,
+                            color: isRead
+                                ? Colors
+                                    .lightBlueAccent
+                                : Colors
+                                    .white70,
+                          ),
                         ],
-                      ),
-                    ],
+                      ],
+                    ),
                   ],
                 ),
               ),
@@ -939,9 +1253,9 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // MESSAGE INPUT
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   Widget _buildMessageInput() {
     return SafeArea(
@@ -959,10 +1273,15 @@ class _ChatScreenState extends State<ChatScreen> {
               child: TextField(
                 controller:
                     _messageController,
+                focusNode:
+                    _messageFocusNode,
                 textInputAction:
                     TextInputAction.send,
                 minLines: 1,
                 maxLines: 5,
+                enabled:
+                    _isUnlocked &&
+                    !_isSending,
                 decoration:
                     InputDecoration(
                   hintText:
@@ -990,9 +1309,11 @@ class _ChatScreenState extends State<ChatScreen> {
               width: 8,
             ),
             FloatingActionButton.small(
-              onPressed: _isSending
-                  ? null
-                  : _sendMessage,
+              onPressed:
+                  _isSending ||
+                          !_isUnlocked
+                      ? null
+                      : _sendMessage,
               child: _isSending
                   ? const SizedBox(
                       width: 18,
@@ -1012,12 +1333,14 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
   // BUILD
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     final showLocked =
         _isChatLocked &&
             !_isUnlocked;
@@ -1075,10 +1398,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child:
                       _buildMessages(),
                 ),
-
-                // Typing indicator
                 _buildTypingIndicator(),
-
                 _buildMessageInput(),
               ],
             ),

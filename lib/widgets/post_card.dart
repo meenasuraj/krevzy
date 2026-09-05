@@ -2,10 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../models/post.dart';
 import '../services/post_service.dart';
-// import '../services/follow_service.dart';
 import '../screens/comments_screen.dart';
 import '../screens/public_profile_screen.dart';
-// import '../services/follow_service.dart';
 
 class PostCard extends StatefulWidget {
   final Post post;
@@ -76,6 +74,7 @@ class _PostCardState extends State<PostCard>
     super.didUpdateWidget(oldWidget);
 
     if (oldWidget.post.id != widget.post.id) {
+      _isLiked = false;
       _loadLikeStatus();
     }
   }
@@ -85,6 +84,10 @@ class _PostCardState extends State<PostCard>
     _likeAnimationController.dispose();
     super.dispose();
   }
+
+  // ============================================================
+  // LOAD CURRENT USER LIKE STATUS
+  // ============================================================
 
   Future<void> _loadLikeStatus() async {
     try {
@@ -104,6 +107,10 @@ class _PostCardState extends State<PostCard>
       // Keep default false.
     }
   }
+
+  // ============================================================
+  // TOGGLE LIKE
+  // ============================================================
 
   Future<void> _toggleLike() async {
     if (_isLikeLoading) {
@@ -142,6 +149,7 @@ class _PostCardState extends State<PostCard>
           content: Text(
             'Like update nahi ho saka: $e',
           ),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -153,6 +161,10 @@ class _PostCardState extends State<PostCard>
     }
   }
 
+  // ============================================================
+  // COMMENTS
+  // ============================================================
+
   void _openComments() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -163,6 +175,10 @@ class _PostCardState extends State<PostCard>
     );
   }
 
+  // ============================================================
+  // PROFILE
+  // ============================================================
+
   void _openProfile() {
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -172,6 +188,10 @@ class _PostCardState extends State<PostCard>
       ),
     );
   }
+
+  // ============================================================
+  // DELETE POST
+  // ============================================================
 
   Future<void> _deletePost() async {
     if (_isDeleteLoading) {
@@ -235,6 +255,7 @@ class _PostCardState extends State<PostCard>
           content: Text(
             'Post deleted successfully.',
           ),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (e) {
@@ -247,6 +268,7 @@ class _PostCardState extends State<PostCard>
           content: Text(
             'Post delete nahi ho saka: $e',
           ),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } finally {
@@ -257,6 +279,10 @@ class _PostCardState extends State<PostCard>
       }
     }
   }
+
+  // ============================================================
+  // DATE
+  // ============================================================
 
   String _formatDate(DateTime date) {
     final difference =
@@ -280,6 +306,10 @@ class _PostCardState extends State<PostCard>
 
     return '${date.day}/${date.month}/${date.year}';
   }
+
+  // ============================================================
+  // AVATAR
+  // ============================================================
 
   Widget _buildAvatar() {
     final photo =
@@ -312,10 +342,13 @@ class _PostCardState extends State<PostCard>
     );
   }
 
+  // ============================================================
+  // POST MENU
+  // ============================================================
+
   Future<void> _showPostMenu() async {
     final currentUserId =
         PostService.currentUserId;
-        
 
     final isOwner =
         currentUserId == widget.post.userId;
@@ -344,6 +377,10 @@ class _PostCardState extends State<PostCard>
       },
     );
   }
+
+  // ============================================================
+  // BUILD
+  // ============================================================
 
   @override
   Widget build(BuildContext context) {
@@ -503,7 +540,7 @@ class _PostCardState extends State<PostCard>
             ),
 
           // ------------------------------------------------------
-          // COUNTS
+          // LIVE COUNTS
           // ------------------------------------------------------
 
           Padding(
@@ -514,35 +551,48 @@ class _PostCardState extends State<PostCard>
               14,
               4,
             ),
-            child: Row(
-              children: [
-                if (widget.post.likesCount > 0)
-                  Text(
-                    '${widget.post.likesCount} '
-                    '${widget.post.likesCount == 1 ? 'like' : 'likes'}',
-                    style: TextStyle(
-                      color: Theme.of(context)
-                          .colorScheme
-                          .onSurfaceVariant,
-                      fontSize: 13,
-                    ),
-                  ),
-                const Spacer(),
-                if (widget.post.commentsCount > 0)
-                  InkWell(
-                    onTap: _openComments,
-                    child: Text(
-                      '${widget.post.commentsCount} '
-                      '${widget.post.commentsCount == 1 ? 'comment' : 'comments'}',
-                      style: TextStyle(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .onSurfaceVariant,
-                        fontSize: 13,
+            child: StreamBuilder<int>(
+              stream: PostService.getLikeCount(
+                widget.post.id,
+              ),
+              builder: (
+                context,
+                likeSnapshot,
+              ) {
+                final likesCount =
+                    likeSnapshot.data ?? 0;
+
+                return Row(
+                  children: [
+                    if (likesCount > 0)
+                      Text(
+                        '$likesCount '
+                        '${likesCount == 1 ? 'like' : 'likes'}',
+                        style: TextStyle(
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant,
+                          fontSize: 13,
+                        ),
                       ),
-                    ),
-                  ),
-              ],
+                    const Spacer(),
+                    if (widget.post.commentsCount > 0)
+                      InkWell(
+                        onTap: _openComments,
+                        child: Text(
+                          '${widget.post.commentsCount} '
+                          '${widget.post.commentsCount == 1 ? 'comment' : 'comments'}',
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
 
@@ -620,6 +670,8 @@ class _PostCardState extends State<PostCard>
                           content: Text(
                             'Share coming soon',
                           ),
+                          behavior:
+                              SnackBarBehavior.floating,
                         ),
                       );
                     },
@@ -639,6 +691,8 @@ class _PostCardState extends State<PostCard>
                           content: Text(
                             'Save coming soon',
                           ),
+                          behavior:
+                              SnackBarBehavior.floating,
                         ),
                       );
                     },
