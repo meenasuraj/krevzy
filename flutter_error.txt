@@ -1,0 +1,65 @@
+Launching lib\main.dart on Chrome in debug mode...
+Waiting for connection from debug service on Chrome...          
+lib/screens/chats_screen.dart:5:8: Error: Error when reading 'lib/services/chat_lock_service.dart': The system cannot find the file specified
+import '../services/chat_lock_service.dart';
+       ^
+lib/screens/notifications_screen.dart:6:8: Error: Error when reading 'lib/services/chat_lock_service.dart': The system cannot find the file specified
+import '../services/chat_lock_service.dart';
+       ^
+lib/screens/chat_screen.dart:7:8: Error: Error when reading 'lib/services/chat_lock_service.dart': The system cannot find the file specified
+import '../services/chat_lock_service.dart';
+       ^
+lib/services/app_lock_service.dart:3:8: Error: Error when reading 'lib/services/chat_lock_service.dart': The system cannot find the file specified
+import 'chat_lock_service.dart';
+       ^
+lib/screens/chats_screen.dart:44:28: Error: The getter 'ChatLockService' isn't defined for the type '_ChatsScreenState'.
+ - '_ChatsScreenState' is from 'package:gapshap/screens/chats_screen.dart' ('lib/screens/chats_screen.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'ChatLockService'.
+      final hashes = await ChatLockService.loadPinHashes();
+                           ^^^^^^^^^^^^^^^
+lib/screens/chats_screen.dart:72:11: Error: The getter 'ChatLockService' isn't defined for the type '_ChatsScreenState'.
+ - '_ChatsScreenState' is from 'package:gapshap/screens/chats_screen.dart' ('lib/screens/chats_screen.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'ChatLockService'.
+    await ChatLockService.savePinHashes(updated);
+          ^^^^^^^^^^^^^^^
+lib/screens/chats_screen.dart:88:11: Error: The getter 'ChatLockService' isn't defined for the type '_ChatsScreenState'.
+ - '_ChatsScreenState' is from 'package:gapshap/screens/chats_screen.dart' ('lib/screens/chats_screen.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'ChatLockService'.
+    await ChatLockService.savePinHashes(updated);
+          ^^^^^^^^^^^^^^^
+lib/screens/notifications_screen.dart:222:15: Error: The getter 'ChatLockService' isn't defined for the type 'NotificationsScreen'.
+ - 'NotificationsScreen' is from 'package:gapshap/screens/notifications_screen.dart' ('lib/screens/notifications_screen.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'ChatLockService'.
+        await ChatLockService.loadPinHashes();
+              ^^^^^^^^^^^^^^^
+lib/screens/notifications_screen.dart:238:19: Error: The getter 'ChatLockService' isn't defined for the type 'NotificationsScreen'.
+ - 'NotificationsScreen' is from 'package:gapshap/screens/notifications_screen.dart' ('lib/screens/notifications_screen.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'ChatLockService'.
+            await ChatLockService.savePinHashes(
+                  ^^^^^^^^^^^^^^^
+lib/screens/notifications_screen.dart:248:19: Error: The getter 'ChatLockService' isn't defined for the type 'NotificationsScreen'.
+ - 'NotificationsScreen' is from 'package:gapshap/screens/notifications_screen.dart' ('lib/screens/notifications_screen.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'ChatLockService'.
+            await ChatLockService.savePinHashes(
+                  ^^^^^^^^^^^^^^^
+lib/screens/chat_screen.dart:493:11: Error: The getter 'ChatLockService' isn't defined for the type '_ChatScreenState'.
+ - '_ChatScreenState' is from 'package:gapshap/screens/chat_screen.dart' ('lib/screens/chat_screen.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'ChatLockService'.
+          ChatLockService.hashPin(pin);
+          ^^^^^^^^^^^^^^^
+lib/screens/chat_screen.dart:654:9: Error: The getter 'ChatLockService' isn't defined for the type '_ChatScreenState'.
+ - '_ChatScreenState' is from 'package:gapshap/screens/chat_screen.dart' ('lib/screens/chat_screen.dart').
+Try correcting the name to the name of an existing getter, or defining a getter or field named 'ChatLockService'.
+        ChatLockService.hashPin(pin);
+        ^^^^^^^^^^^^^^^
+lib/services/app_lock_service.dart:23:21: Error: Undefined name 'ChatLockService'.
+    final pinHash = ChatLockService.hashPin(pin);
+                    ^^^^^^^^^^^^^^^
+lib/services/app_lock_service.dart:39:25: Error: Undefined name 'ChatLockService'.
+    final enteredHash = ChatLockService.hashPin(pin);
+                        ^^^^^^^^^^^^^^^
+lib/services/app_lock_service.dart:47:24: Error: Undefined name 'ChatLockService'.
+    final newPinHash = ChatLockService.hashPin(newPin);
+                       ^^^^^^^^^^^^^^^
+Waiting for connection from debug service on Chrome...             88.2s
+Failed to compile application.
