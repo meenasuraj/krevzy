@@ -1,10 +1,5 @@
-import 'dart:async';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
-import 'user_profile_screen.dart';
+import 'chat_detail_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -14,695 +9,170 @@ class SearchScreen extends StatefulWidget {
 }
 
 class _SearchScreenState extends State<SearchScreen> {
-  final TextEditingController _searchController =
-      TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  
+  // Sample creator network database for search
+  final List<Map<String, dynamic>> _allCreators = [
+    {'name': 'Rahul Sharma', 'handle': '@rahul_tech', 'role': 'Security Expert', 'isFollowing': true},
+    {'name': 'Priya Verma', 'handle': '@priya_v', 'role': 'Photo Editor', 'isFollowing': false},
+    {'name': 'Amit Kumar', 'handle': '@amit_cctv', 'role': 'Hardware Tech', 'isFollowing': false},
+    {'name': 'Neha Singh', 'handle': '@neha_design', 'role': 'UI/UX Designer', 'isFollowing': true},
+    {'name': 'Vikram Patel', 'handle': '@vikram_net', 'role': 'Network Admin', 'isFollowing': false},
+  ];
 
-  final FirebaseFirestore _firestore =
-      FirebaseFirestore.instance;
-
-  final FirebaseAuth _auth =
-      FirebaseAuth.instance;
-
-  Timer? _debounce;
-
-  bool _isLoading = false;
-  String _searchText = '';
-
-  List<QueryDocumentSnapshot<Map<String, dynamic>>> _users = [];
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    _searchController.dispose();
-    super.dispose();
-  }
-
-  void _onSearchChanged(String value) {
-    _debounce?.cancel();
-
-    final text = value.trim();
-
-    setState(() {
-      _searchText = text;
-    });
-
-    if (text.isEmpty) {
-      setState(() {
-        _users = [];
-        _isLoading = false;
-      });
-      return;
-    }
-
-    _debounce = Timer(
-      const Duration(milliseconds: 400),
-      () {
-        _searchUsers(text);
-      },
-    );
-  }
-
-  Future<void> _searchUsers(String text) async {
-    final currentUser = _auth.currentUser;
-
-    if (currentUser == null) {
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      final searchText = text.toLowerCase();
-
-      final usernameResults = await _firestore
-          .collection('users')
-          .where(
-            'usernameLowercase',
-            isGreaterThanOrEqualTo: searchText,
-          )
-          .where(
-            'usernameLowercase',
-            isLessThanOrEqualTo: '$searchText\uf8ff',
-          )
-          .limit(30)
-          .get();
-
-      final nameResults = await _firestore
-          .collection('users')
-          .where(
-            'nameLowercase',
-            isGreaterThanOrEqualTo: searchText,
-          )
-          .where(
-            'nameLowercase',
-            isLessThanOrEqualTo: '$searchText\uf8ff',
-          )
-          .limit(30)
-          .get();
-
-      final Map<String, QueryDocumentSnapshot<Map<String, dynamic>>>
-          uniqueUsers = {};
-
-      for (final document in usernameResults.docs) {
-        if (document.id != currentUser.uid) {
-          uniqueUsers[document.id] = document;
-        }
-      }
-
-      for (final document in nameResults.docs) {
-        if (document.id != currentUser.uid) {
-          uniqueUsers[document.id] = document;
-        }
-      }
-
-      if (!mounted) return;
-
-      setState(() {
-        _users = uniqueUsers.values.toList();
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _users = [];
-        _isLoading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          content: Text(
-            'Search error: $e',
-          ),
-        ),
-      );
-    }
-  }
-
-  void _clearSearch() {
-    _debounce?.cancel();
-    _searchController.clear();
-
-    setState(() {
-      _searchText = '';
-      _users = [];
-      _isLoading = false;
-    });
-  }
-
-  void _openUserProfile(
-    QueryDocumentSnapshot<Map<String, dynamic>> document,
-  ) {
-    final data = document.data();
-
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => UserProfileScreen(
-          userId: document.id,
-          name: data['name']?.toString() ?? '',
-          username: data['username']?.toString() ?? '',
-          bio: data['bio']?.toString() ?? '',
-          photoUrl: data['photoUrl']?.toString() ?? '',
-          postsCount: _readInt(data['postsCount']),
-          followersCount: _readInt(data['followersCount']),
-          followingCount: _readInt(data['followingCount']),
-        ),
-      ),
-    );
-  }
-
-  int _readInt(dynamic value) {
-    if (value is num) {
-      return value.toInt();
-    }
-
-    return int.tryParse(
-          value?.toString() ?? '',
-        ) ??
-        0;
-  }
-
-  Widget _buildAvatar(
-    BuildContext context,
-    Map<String, dynamic> data,
-  ) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    final photoUrl =
-        data['photoUrl']?.toString() ?? '';
-
-    final name =
-        data['name']?.toString() ?? '';
-
-    final username =
-        data['username']?.toString() ?? '';
-
-    final firstLetter = name.isNotEmpty
-        ? name[0].toUpperCase()
-        : username.isNotEmpty
-            ? username[0].toUpperCase()
-            : '?';
-
-    if (photoUrl.isEmpty) {
-      return Container(
-        width: 56,
-        height: 56,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              colorScheme.primary,
-              colorScheme.secondary,
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          shape: BoxShape.circle,
-        ),
-        child: Center(
-          child: Text(
-            firstLetter,
-            style: TextStyle(
-              color: colorScheme.onPrimary,
-              fontWeight: FontWeight.w900,
-              fontSize: 20,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      width: 58,
-      height: 58,
-      padding: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            colorScheme.primary,
-            colorScheme.secondary,
-          ],
-        ),
-        shape: BoxShape.circle,
-      ),
-      child: CircleAvatar(
-        backgroundColor: colorScheme.surface,
-        backgroundImage: NetworkImage(photoUrl),
-      ),
-    );
-  }
+  String _searchQuery = '';
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    // Filter creators based on search query
+    final filteredCreators = _allCreators.where((creator) {
+      final nameLower = creator['name'].toLowerCase();
+      final handleLower = creator['handle'].toLowerCase();
+      final roleLower = creator['role'].toLowerCase();
+      final query = _searchQuery.toLowerCase();
+      return nameLower.contains(query) || handleLower.contains(query) || roleLower.contains(query);
+    }).toList();
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
+      backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: colorScheme.surface,
-        titleSpacing: 20,
-        title: Row(
-          children: [
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colorScheme.primary,
-                    colorScheme.secondary,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Icons.person_search_rounded,
-                color: colorScheme.onPrimary,
-                size: 21,
-              ),
-            ),
-            const SizedBox(width: 11),
-            Text(
-              'Discover People',
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
+        title: const Text('Explore Creators'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
       ),
       body: Column(
         children: [
-          _SearchHeader(
-            controller: _searchController,
-            searchText: _searchText,
-            onChanged: _onSearchChanged,
-            onClear: _clearSearch,
-          ),
-          if (_isLoading)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                20,
-                4,
-                20,
-                12,
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: const LinearProgressIndicator(
-                  minHeight: 3,
-                ),
-              ),
-            ),
-          Expanded(
-            child: _searchText.isEmpty
-                ? const _SearchEmptyState()
-                : _users.isEmpty && !_isLoading
-                    ? const _NoSearchResults()
-                    : ListView.builder(
-                        padding: const EdgeInsets.fromLTRB(
-                          16,
-                          4,
-                          16,
-                          24,
-                        ),
-                        itemCount: _users.length,
-                        itemBuilder: (context, index) {
-                          final document = _users[index];
-                          final data = document.data();
-
-                          return _UserResultCard(
-                            data: data,
-                            avatar: _buildAvatar(
-                              context,
-                              data,
-                            ),
-                            onTap: () {
-                              _openUserProfile(
-                                document,
-                              );
-                            },
-                          );
-                        },
-                      ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================
-// SEARCH HEADER
-// ============================================================
-
-class _SearchHeader extends StatelessWidget {
-  const _SearchHeader({
-    required this.controller,
-    required this.searchText,
-    required this.onChanged,
-    required this.onClear,
-  });
-
-  final TextEditingController controller;
-  final String searchText;
-  final ValueChanged<String> onChanged;
-  final VoidCallback onClear;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        20,
-        12,
-        20,
-        10,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Find your people',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Search by name or username and connect.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextField(
-            controller: controller,
-            onChanged: onChanged,
-            textInputAction: TextInputAction.search,
-            textCapitalization: TextCapitalization.none,
-            decoration: InputDecoration(
-              hintText: 'Search people...',
-              hintStyle: TextStyle(
-                color: colorScheme.onSurfaceVariant,
-              ),
-              prefixIcon: Container(
-                margin: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(
-                  Icons.search_rounded,
-                  color: colorScheme.primary,
-                  size: 21,
-                ),
-              ),
-              prefixIconConstraints: const BoxConstraints(
-                minWidth: 52,
-                minHeight: 52,
-              ),
-              suffixIcon: searchText.isNotEmpty
-                  ? IconButton(
-                      tooltip: 'Clear',
-                      onPressed: onClear,
-                      icon: const Icon(
-                        Icons.close_rounded,
-                      ),
-                    )
-                  : null,
-              filled: true,
-              fillColor: colorScheme.surfaceContainerHighest
-                  .withValues(alpha: 0.6),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 16,
-              ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(18),
-                borderSide: BorderSide(
-                  color: colorScheme.primary,
-                  width: 1.5,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================
-// USER RESULT CARD
-// ============================================================
-
-class _UserResultCard extends StatelessWidget {
-  const _UserResultCard({
-    required this.data,
-    required this.avatar,
-    required this.onTap,
-  });
-
-  final Map<String, dynamic> data;
-  final Widget avatar;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    final name =
-        data['name']?.toString() ?? '';
-
-    final username =
-        data['username']?.toString() ?? '';
-
-    final bio =
-        data['bio']?.toString() ?? '';
-
-    final displayName = name.isNotEmpty
-        ? name
-        : username.isNotEmpty
-            ? username
-            : 'GAPSHAP User';
-
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.only(
-        bottom: 10,
-      ),
-      color: colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-          color: colorScheme.outlineVariant
-              .withValues(alpha: 0.35),
-        ),
-      ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            children: [
-              avatar,
-              const SizedBox(width: 13),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      displayName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if (username.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Text(
-                        '@$username',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.primary,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                    if (bio.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        bio,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer,
+          // Search Input Bar
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (value) {
+                setState(() {
+                  _searchQuery = value;
+                });
+              },
+              decoration: InputDecoration(
+                hintText: 'Search by name, handle, or creator role...',
+                prefixIcon: const Icon(Icons.search, color: Colors.blue),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
                 ),
-                child: Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  size: 15,
-                  color: colorScheme.primary,
-                ),
+                suffixIcon: _searchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          setState(() {
+                            _searchController.clear();
+                            _searchQuery = '';
+                          });
+                        },
+                      )
+                    : null,
               ),
-            ],
+            ),
           ),
-        ),
-      ),
-    );
-  }
-}
 
-// ============================================================
-// EMPTY SEARCH STATE
-// ============================================================
-
-class _SearchEmptyState extends StatelessWidget {
-  const _SearchEmptyState();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(30),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 96,
-              height: 96,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colorScheme.primaryContainer,
-                    colorScheme.secondaryContainer,
-                  ],
-                ),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.people_alt_rounded,
-                size: 44,
-                color: colorScheme.primary,
-              ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Find people on GAPSHAP',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Search for friends, creators and people\n'
-              'you want to connect with.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-                height: 1.45,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// NO RESULTS
-// ============================================================
-
-class _NoSearchResults extends StatelessWidget {
-  const _NoSearchResults();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(30),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 88,
-              height: 88,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                Icons.person_search_rounded,
-                size: 42,
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              'No users found',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 7),
-            Text(
-              'Try another name or username.',
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-          ],
-        ),
+          // Search Results ListView
+          Expanded(
+            child: filteredCreators.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No creators found matching your search.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    itemCount: filteredCreators.length,
+                    itemBuilder: (context, index) {
+                      final creator = filteredCreators[index];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          leading: CircleAvatar(
+                            radius: 24,
+                            backgroundColor: Colors.blue.shade100,
+                            child: Text(
+                              creator['name'][0],
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ),
+                          title: Text(
+                            creator['name'],
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(creator['handle'], style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                              const SizedBox(height: 2),
+                              Text(
+                                creator['role'],
+                                style: const TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.w500),
+                              ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.chat_bubble_outline, color: Colors.blue),
+                                tooltip: 'Direct Message',
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) => ChatDetailScreen(
+                                        peerName: creator['name'],
+                                        peerHandle: creator['handle'],
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: creator['isFollowing'] ? Colors.grey[200] : Colors.blue,
+                                  foregroundColor: creator['isFollowing'] ? Colors.black87 : Colors.white,
+                                  elevation: 0,
+                                ),
+                                onPressed: () {
+                                  setState(() {
+                                    creator['isFollowing'] = !creator['isFollowing'];
+                                  });
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        creator['isFollowing']
+                                            ? 'Now following ${creator['name']}'
+                                            : 'Unfollowed ${creator['name']}',
+                                      ),
+                                      duration: const Duration(seconds: 1),
+                                    ),
+                                  );
+                                },
+                                child: Text(creator['isFollowing'] ? 'Following' : 'Follow'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }

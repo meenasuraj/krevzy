@@ -4,12 +4,17 @@
 <dict>
 <key>NSFaceIDUsageDescription</key>
 <string>Gapshap uses Face ID to securely unlock the app.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Krevzy requires camera access to connect video calls.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Krevzy requires microphone access for voice and video calls.</string>
+	
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Gapshap</string>
+	<string>Krevzy</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

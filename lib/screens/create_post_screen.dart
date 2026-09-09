@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../services/post_service.dart';
-
 class CreatePostScreen extends StatefulWidget {
   const CreatePostScreen({super.key});
 
@@ -10,641 +8,175 @@ class CreatePostScreen extends StatefulWidget {
 }
 
 class _CreatePostScreenState extends State<CreatePostScreen> {
-  final TextEditingController _captionController =
-      TextEditingController();
+  final TextEditingController _contentController = TextEditingController();
+  bool _hasMediaAttached = false;
+  String _selectedCategory = 'General';
 
-  final FocusNode _captionFocusNode = FocusNode();
+  final List<String> _categories = ['General', 'Security Systems', 'Flutter Dev', 'Digital Editing'];
 
-  bool _isPosting = false;
-
-  static const int _maxCaptionLength = 500;
-
-  @override
-  void dispose() {
-    _captionController.dispose();
-    _captionFocusNode.dispose();
-    super.dispose();
-  }
-
-  // ==========================================================================
-  // CREATE POST
-  // ==========================================================================
-
-  Future<void> _createPost() async {
-    final caption = _captionController.text.trim();
-
-    if (caption.isEmpty) {
-      _showMessage('Please write something first.');
-      _captionFocusNode.requestFocus();
-      return;
-    }
-
-    if (caption.length > _maxCaptionLength) {
-      _showMessage(
-        'Caption can contain maximum $_maxCaptionLength characters.',
+  void _submitPost() {
+    if (_contentController.text.trim().isNotEmpty) {
+      Navigator.pop(context, {
+        'content': _contentController.text.trim(),
+        'category': _selectedCategory,
+        'hasMedia': _hasMediaAttached,
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Post published successfully!')),
       );
-      return;
-    }
-
-    setState(() {
-      _isPosting = true;
-    });
-
-    try {
-      await PostService.createPost(
-        caption: caption,
-        mediaUrl: '',
-        mediaType: 'text',
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please write something before posting.')),
       );
-
-      if (!mounted) {
-        return;
-      }
-
-      _captionController.clear();
-      _captionFocusNode.unfocus();
-
-      _showMessage('Post created successfully! 🎉');
-    } catch (e) {
-      if (!mounted) {
-        return;
-      }
-
-      _showMessage(_cleanErrorMessage(e));
     }
-
-    if (!mounted) {
-      return;
-    }
-
-    setState(() {
-      _isPosting = false;
-    });
   }
-
-  // ==========================================================================
-  // ERROR MESSAGE
-  // ==========================================================================
-
-  String _cleanErrorMessage(Object error) {
-    final message = error.toString().toLowerCase();
-
-    if (message.contains('permission-denied') ||
-        message.contains('missing or insufficient permissions')) {
-      return 'Permission denied. Please check Firestore Rules.';
-    }
-
-    if (message.contains('user is not logged in')) {
-      return 'Please login again.';
-    }
-
-    if (message.contains('network')) {
-      return 'Network error. Please check your internet connection.';
-    }
-
-    return 'Could not create post. Please try again.';
-  }
-
-  // ==========================================================================
-  // MESSAGE
-  // ==========================================================================
-
-  void _showMessage(String message) {
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.all(16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-        ),
-      );
-  }
-
-  // ==========================================================================
-  // DISABLED MEDIA MESSAGE
-  // ==========================================================================
-
-  void _showMediaComingSoon(String type) {
-    _showMessage(
-      '$type upload will be available after Storage setup.',
-    );
-  }
-
-  // ==========================================================================
-  // BUILD
-  // ==========================================================================
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final captionLength = _captionController.text.length;
-
-    return SafeArea(
-      child: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(
-          20,
-          18,
-          20,
-          30,
-        ),
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
+        title: const Text('Create New Post'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 10),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.blue,
+                elevation: 0,
+              ),
+              onPressed: _submitPost,
+              child: const Text('Publish', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ==================================================================
-            // HEADER
-            // ==================================================================
-
+            // Category Selector Dropdown
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        colorScheme.primary,
-                        colorScheme.secondary,
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Icon(
-                    Icons.edit_rounded,
-                    color: colorScheme.onPrimary,
-                    size: 25,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Create Post',
-                        style:
-                            theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        'Share something with your community.',
-                        style:
-                            theme.textTheme.bodySmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
+                const Text('Category: ', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(width: 12),
+                DropdownButton<String>(
+                  value: _selectedCategory,
+                  items: _categories.map((String cat) {
+                    return DropdownMenuItem<String>(
+                      value: cat,
+                      child: Text(cat),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null) {
+                      setState(() {
+                        _selectedCategory = newValue;
+                      });
+                    }
+                  },
                 ),
               ],
             ),
+            const SizedBox(height: 16),
 
-            const SizedBox(height: 24),
-
-            // ==================================================================
-            // POST TYPE CARD
-            // ==================================================================
-
+            // Post Text Input Area
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    colorScheme.primaryContainer,
-                    colorScheme.secondaryContainer,
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 54,
-                    height: 54,
-                    decoration: BoxDecoration(
-                      color:
-                          colorScheme.surface.withValues(alpha: 0.75),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Icon(
-                      Icons.text_fields_rounded,
-                      color: colorScheme.primary,
-                      size: 28,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment:
-                          CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Text Post',
-                          style:
-                              theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Write your thoughts and start a conversation.',
-                          style:
-                              theme.textTheme.bodySmall?.copyWith(
-                            color:
-                                colorScheme.onSurfaceVariant,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.check_circle_rounded,
-                    color: colorScheme.primary,
-                    size: 24,
-                  ),
-                ],
-              ),
-            ),
-
-            const SizedBox(height: 22),
-
-            // ==================================================================
-            // WRITE AREA
-            // ==================================================================
-
-            Text(
-              'What\'s on your mind?',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-
-            const SizedBox(height: 10),
-
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(
-                  color: colorScheme.outlineVariant
-                      .withValues(alpha: 0.45),
-                ),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
               ),
               child: TextField(
-                controller: _captionController,
-                focusNode: _captionFocusNode,
-                enabled: !_isPosting,
-                maxLines: 9,
-                minLines: 7,
-                maxLength: _maxCaptionLength,
-                textCapitalization:
-                    TextCapitalization.sentences,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  height: 1.5,
-                ),
-                onChanged: (_) {
-                  setState(() {});
-                },
-                decoration: InputDecoration(
-                  hintText:
-                      'Write something you want to share...',
-                  hintStyle:
-                      theme.textTheme.bodyLarge?.copyWith(
-                    color: colorScheme.onSurfaceVariant,
-                    height: 1.5,
-                  ),
-                  alignLabelWithHint: true,
-                  contentPadding: const EdgeInsets.fromLTRB(
-                    18,
-                    18,
-                    18,
-                    8,
-                  ),
+                controller: _contentController,
+                maxLines: 6,
+                decoration: const InputDecoration(
+                  hintText: 'Share your updates, project milestones, or media tips with the Krevzy community...',
                   border: InputBorder.none,
-                  counterText: '',
                 ),
               ),
             ),
+            const SizedBox(height: 16),
 
-            const SizedBox(height: 8),
-
-            // Character counter
-            Row(
-              mainAxisAlignment:
-                  MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
+            // Attached Media Preview Box (if enabled)
+            if (_hasMediaAttached)
+              Container(
+                height: 180,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Stack(
                   children: [
-                    Icon(
-                      Icons.lock_outline_rounded,
-                      size: 15,
-                      color: colorScheme.onSurfaceVariant,
+                    const Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.image, size: 48, color: Colors.blue),
+                          SizedBox(height: 8),
+                          Text('High-Definition Media Attached', style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
                     ),
-                    const SizedBox(width: 5),
-                    Text(
-                      'Your post will be saved to GAPSHAP.',
-                      style:
-                          theme.textTheme.labelSmall?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: CircleAvatar(
+                        backgroundColor: Colors.red,
+                        radius: 16,
+                        child: IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white, size: 16),
+                          onPressed: () {
+                            setState(() {
+                              _hasMediaAttached = false;
+                            });
+                          },
+                        ),
                       ),
                     ),
                   ],
                 ),
-                Text(
-                  '$captionLength / $_maxCaptionLength',
-                  style: theme.textTheme.labelSmall?.copyWith(
-                    color: captionLength >
-                            _maxCaptionLength
-                        ? colorScheme.error
-                        : colorScheme.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 22),
-
-            // ==================================================================
-            // MEDIA OPTIONS
-            // ==================================================================
-
-            Text(
-              'Add to your post',
-              style: theme.textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w800,
               ),
-            ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 16),
 
+            // Attachment Tool Buttons
             Row(
               children: [
-                Expanded(
-                  child: _MediaOption(
-                    icon: Icons.photo_outlined,
-                    title: 'Photo',
-                    subtitle: 'Coming soon',
-                    onTap: _isPosting
-                        ? null
-                        : () {
-                            _showMediaComingSoon(
-                              'Photo',
-                            );
-                          },
-                  ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.blue),
+                  onPressed: () {
+                    setState(() {
+                      _hasMediaAttached = true;
+                    });
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('HD Media attached successfully!')),
+                    );
+                  },
+                  icon: const Icon(Icons.add_photo_alternate),
+                  label: const Text('Add Photo/Video'),
                 ),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: _MediaOption(
-                    icon: Icons.videocam_outlined,
-                    title: 'Video',
-                    subtitle: 'Coming soon',
-                    onTap: _isPosting
-                        ? null
-                        : () {
-                            _showMediaComingSoon(
-                              'Video',
-                            );
-                          },
-                  ),
+                OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(foregroundColor: Colors.grey[700]),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Tag location feature ready.')),
+                    );
+                  },
+                  icon: const Icon(Icons.location_on_outlined),
+                  label: const Text('Add Location'),
                 ),
               ],
             ),
-
-            const SizedBox(height: 24),
-
-            // ==================================================================
-            // POST BUTTON
-            // ==================================================================
-
-            SizedBox(
-              width: double.infinity,
-              height: 56,
-              child: FilledButton(
-                onPressed:
-                    _isPosting ? null : _createPost,
-                style: FilledButton.styleFrom(
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                ),
-                child: AnimatedSwitcher(
-                  duration:
-                      const Duration(milliseconds: 200),
-                  child: _isPosting
-                      ? const Row(
-                          key: ValueKey('posting'),
-                          mainAxisAlignment:
-                              MainAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              width: 21,
-                              height: 21,
-                              child:
-                                  CircularProgressIndicator(
-                                strokeWidth: 2.2,
-                              ),
-                            ),
-                            SizedBox(width: 12),
-                            Text(
-                              'Posting...',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight:
-                                    FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        )
-                      : const Row(
-                          key: ValueKey('post'),
-                          mainAxisAlignment:
-                              MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.send_rounded,
-                              size: 21,
-                            ),
-                            SizedBox(width: 10),
-                            Text(
-                              'Create Post',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight:
-                                    FontWeight.w800,
-                              ),
-                            ),
-                          ],
-                        ),
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 14),
-
-            // ==================================================================
-            // INFO CARD
-            // ==================================================================
-
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(15),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest
-                    .withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(17),
-              ),
-              child: Row(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: colorScheme.primaryContainer,
-                      borderRadius:
-                          BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.info_outline_rounded,
-                      size: 19,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Text(
-                      'Your text post will appear in the Home feed '
-                      'and will be linked to your GAPSHAP account.',
-                      style:
-                          theme.textTheme.bodySmall?.copyWith(
-                        color:
-                            colorScheme.onSurfaceVariant,
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
           ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// MEDIA OPTION
-// ============================================================================
-
-class _MediaOption extends StatelessWidget {
-  const _MediaOption({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    final enabled = onTap != null;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 14,
-          ),
-          decoration: BoxDecoration(
-            color: colorScheme.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: colorScheme.outlineVariant
-                  .withValues(alpha: 0.4),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: colorScheme.primaryContainer
-                      .withValues(
-                    alpha: enabled ? 1 : 0.55,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  icon,
-                  size: 21,
-                  color: colorScheme.primary.withValues(
-                    alpha: enabled ? 1 : 0.6,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style:
-                          theme.textTheme.labelLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style:
-                          theme.textTheme.labelSmall?.copyWith(
-                        color:
-                            colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
         ),
       ),
     );

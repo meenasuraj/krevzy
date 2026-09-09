@@ -8,11 +8,10 @@ import 'package:flutter/foundation.dart'
 ///
 /// Example:
 /// ```dart
-/// import 'firebase_options.dart';
-/// // ...
 /// await Firebase.initializeApp(
 ///   options: DefaultFirebaseOptions.currentPlatform,
 /// );
+/// ```
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) {
@@ -24,54 +23,69 @@ class DefaultFirebaseOptions {
       case TargetPlatform.iOS:
         return ios;
       case TargetPlatform.macOS:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for macos - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return macos;
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
+        return linux;
+      case TargetPlatform.fuchsia:
         throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
-      default:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions are not supported for this platform.',
+          'DefaultFirebaseOptions have not been configured for Fuchsia.',
         );
     }
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBqXG4c57omB3UbrJUZEpuSAEppNvLSwvU',
-    appId: '1:465805150366:web:4a6a363562468ef39ad38f',
-    messagingSenderId: '465805150366',
-    projectId: 'gapshap-app-9901',
-    authDomain: 'gapshap-app-9901.firebaseapp.com',
-    databaseURL: 'https://gapshap-app-9901-default-rtdb.firebaseio.com',
-    storageBucket: 'gapshap-app-9901.firebasestorage.app',
-    measurementId: 'G-S9KL34CT65',
+    apiKey: 'YOUR_WEB_API_KEY',
+    appId: 'YOUR_WEB_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    authDomain: 'YOUR_AUTH_DOMAIN',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
+    measurementId: 'YOUR_MEASUREMENT_ID',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDfxZfFf_MS1D9JcFbcESKs63jH67fGwxM',
-    appId: '1:465805150366:android:5165563c71fb2b5c9ad38f',
-    messagingSenderId: '465805150366',
-    projectId: 'gapshap-app-9901',
-    databaseURL: 'https://gapshap-app-9901-default-rtdb.firebaseio.com',
-    storageBucket: 'gapshap-app-9901.firebasestorage.app',
+    apiKey: 'YOUR_ANDROID_API_KEY',
+    appId: 'YOUR_ANDROID_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
   );
+
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyCtlxnMttEviAKCLqZ1Ib4qc1DwT0zb4pQ',
-    appId: '1:465805150366:ios:f2ac4a6a992698279ad38f',
-    messagingSenderId: '465805150366',
-    projectId: 'gapshap-app-9901',
-    databaseURL: 'https://gapshap-app-9901-default-rtdb.firebaseio.com',
-    storageBucket: 'gapshap-app-9901.firebasestorage.app',
-    iosClientId: '465805150366-qmi5sgdm9s34db9m6s2lf3m7stgrkqbv.apps.googleusercontent.com',
-    iosBundleId: 'com.example.gapshap',
+    apiKey: 'YOUR_IOS_API_KEY',
+    appId: 'YOUR_IOS_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
+    iosBundleId: 'com.example.krevzyProject',
+  );
+
+  static const FirebaseOptions macos = FirebaseOptions(
+    apiKey: 'YOUR_MACOS_API_KEY',
+    appId: 'YOUR_MACOS_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
+    iosBundleId: 'com.example.krevzyProject.macos',
+  );
+
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'YOUR_WINDOWS_API_KEY',
+    appId: 'YOUR_WINDOWS_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    authDomain: 'YOUR_AUTH_DOMAIN',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
+  );
+
+  static const FirebaseOptions linux = FirebaseOptions(
+    apiKey: 'YOUR_LINUX_API_KEY',
+    appId: 'YOUR_LINUX_APP_ID',
+    messagingSenderId: 'YOUR_MESSAGING_SENDER_ID',
+    projectId: 'YOUR_PROJECT_ID',
+    authDomain: 'YOUR_AUTH_DOMAIN',
+    storageBucket: 'YOUR_STORAGE_BUCKET',
   );
 }
