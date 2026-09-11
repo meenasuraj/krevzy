@@ -1,0 +1,1 @@
+Cleanup patch for analyzer info/warnings. Apply over KREVZY project. Does not touch profile_screen.dart because current local version may differ from historical source.

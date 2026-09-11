@@ -1,0 +1,22 @@
+KREVZY Phase 18 files
+
+NEW:
+lib/services/krevzy_background_service.dart
+lib/widgets/krevzy_background.dart
+lib/screens/customization_screen.dart
+lib/services/room_service.dart
+lib/screens/rooms_screen.dart
+lib/screens/create_room_screen.dart
+lib/screens/room_chat_screen.dart
+
+MODIFIED:
+lib/screens/settings_screen.dart
+lib/screens/chat_screen.dart
+lib/screens/chats_screen.dart
+lib/screens/home_screen.dart
+firestore.rules
+storage.rules
+firebase.json
+pubspec.yaml
+
+COPY ROOT: C:\Projects\KREVZY PROJECT\

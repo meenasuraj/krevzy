@@ -1,0 +1,4 @@
+cd C:\Projects\gapshap
+set GRADLE_USER_HOME=C:\gradle-gapshap
+set GRADLE_OPTS=-Dorg.gradle.vfs.watch=false
+flutter build apk --release

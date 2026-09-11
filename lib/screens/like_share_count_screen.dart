@@ -1,0 +1,4 @@
+import 'package:flutter/material.dart';
+import '../services/krevzy_social_settings_service.dart';
+class LikeShareCountScreen extends StatefulWidget{const LikeShareCountScreen({super.key});@override State<LikeShareCountScreen>createState()=>_LikeShareCountScreenState();}
+class _LikeShareCountScreenState extends State<LikeShareCountScreen>{bool likes=false,shares=false;Future<void> save(String k,bool v)async=>KrevzySocialSettingsService.setValue(k,v);@override Widget build(BuildContext c)=>Scaffold(appBar:AppBar(title:const Text('Like and share counts')),body:ListView(children:[SwitchListTile(title:const Text('Hide like counts'),subtitle:const Text('Hide public like counts on posts'),value:likes,onChanged:(v){setState(()=>likes=v);save('hide_like_counts',v);}),SwitchListTile(title:const Text('Hide share counts'),subtitle:const Text('Hide public share counts on posts'),value:shares,onChanged:(v){setState(()=>shares=v);save('hide_share_counts',v);})]));}
