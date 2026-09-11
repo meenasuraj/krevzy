@@ -22,3 +22,5 @@ npm-debug.log*
 # OS
 Thumbs.db
 .DS_Store
+.flutter-plugins-dependencies
+*.backup
