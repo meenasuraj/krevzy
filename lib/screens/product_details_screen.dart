@@ -19,18 +19,8 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black87),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            onPressed: () {
-              // TODO: Share product action
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.favorite_border),
-            onPressed: () {
-              // TODO: Wishlist action
-            },
-          ),
+          IconButton(icon: const Icon(Icons.share_outlined), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.favorite_border), onPressed: () {}),
         ],
       ),
       body: SingleChildScrollView(
@@ -43,11 +33,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
               width: double.infinity,
               color: Colors.grey[200],
               child: const Center(
-                child: Icon(
-                  Icons.image_outlined,
-                  size: 80,
-                  color: Colors.grey,
-                ),
+                child: Icon(Icons.image_outlined, size: 80, color: Colors.grey),
               ),
             ),
             const SizedBox(height: 20),
@@ -105,18 +91,12 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                   // Description Title
                   const Text(
                     'Description',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
                   const Text(
                     'High definition security camera featuring night vision, motion detection, and seamless mobile connectivity. Perfect for indoor and outdoor monitoring to keep your premises completely safe.',
-                    style: TextStyle(
-                      color: Colors.grey,
-                      height: 1.5,
-                    ),
+                    style: TextStyle(color: Colors.grey, height: 1.5),
                   ),
                   const SizedBox(height: 24),
 
@@ -147,7 +127,9 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
                               },
                             ),
                             Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                              ),
                               child: Text(
                                 '$_quantity',
                                 style: const TextStyle(
@@ -210,9 +192,7 @@ class _ProductDetailsScreenState extends State<ProductDetailsScreen> {
             const SizedBox(width: 16),
             Expanded(
               child: ElevatedButton(
-                onPressed: () {
-                  // TODO: Trigger PaymentModal here directly if desired!
-                },
+                onPressed: () {},
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   backgroundColor: Colors.blue,

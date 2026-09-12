@@ -32,7 +32,7 @@ class _KrevzyChatScreenState extends State<KrevzyChatScreen> {
 
   void _sendMessage() {
     if (_messageController.text.trim().isEmpty) return;
-    // TODO: Send message logic
+
     _messageController.clear();
   }
 
@@ -75,7 +75,10 @@ class _KrevzyChatScreenState extends State<KrevzyChatScreen> {
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.block_rounded, color: Colors.red),
-                title: const Text('Block User', style: TextStyle(color: Colors.red)),
+                title: const Text(
+                  'Block User',
+                  style: TextStyle(color: Colors.red),
+                ),
                 onTap: () {
                   Navigator.pop(context);
                 },
@@ -117,7 +120,11 @@ class _KrevzyChatScreenState extends State<KrevzyChatScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.add_card_rounded, color: colorScheme.primary, size: 28),
+                  Icon(
+                    Icons.add_card_rounded,
+                    color: colorScheme.primary,
+                    size: 28,
+                  ),
                   const SizedBox(width: 10),
                   const Text(
                     'Add Money to Wallet',
@@ -195,9 +202,7 @@ class _KrevzyChatScreenState extends State<KrevzyChatScreen> {
   }
 
   Widget _buildLockedView() {
-    return const Center(
-      child: Text('This chat is locked'),
-    );
+    return const Center(child: Text('This chat is locked'));
   }
 
   // ===========================================================================
@@ -348,10 +353,7 @@ class _KrevzyChatScreenState extends State<KrevzyChatScreen> {
                   if (_isChatLocked)
                     const Text(
                       '🔒 Locked Chat',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey,
-                      ),
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                 ],
               ),

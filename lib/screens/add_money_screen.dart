@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:upi_india/upi_india.dart';
 
 import '../services/upi_service.dart';
 import '../services/wallet_service.dart';
@@ -18,6 +19,8 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   final UpiService _upiService = UpiService();
 
   bool _isProcessing = false;
+  bool _isLoadingUpiApps = false;
+
   List<UpiApp> _upiApps = <UpiApp>[];
 
   final List<int> _quickAmounts = <int>[100, 200, 500, 1000, 2000];
@@ -35,9 +38,13 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   }
 
   Future<void> _loadUpiApps() async {
-    if (kIsWeb) {
+    if (kIsWeb || _isLoadingUpiApps) {
       return;
     }
+
+    setState(() {
+      _isLoadingUpiApps = true;
+    });
 
     try {
       final apps = await _upiService.getInstalledApps();
@@ -50,7 +57,21 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         _upiApps = apps;
       });
     } catch (e) {
-      debugPrint('UPI app discovery error: $e');
+      debugPrint('KREVZY UPI app discovery error: $e');
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _upiApps = <UpiApp>[];
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoadingUpiApps = false;
+        });
+      }
     }
   }
 
@@ -98,7 +119,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     }
 
     if (amount > 100000) {
-      _showMessage('Maximum top-up amount is ₹100,000.');
+      _showMessage('Maximum top-up amount is ₹1,00,000.');
       return;
     }
 
@@ -110,11 +131,11 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     if (_upiApps.isEmpty) {
       await _loadUpiApps();
 
-      if (_upiApps.isEmpty) {
-        if (!mounted) {
-          return;
-        }
+      if (!mounted) {
+        return;
+      }
 
+      if (_upiApps.isEmpty) {
         await _showNoUpiAppsDialog();
         return;
       }
@@ -128,9 +149,10 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       /*
        * STEP 1
        *
-       * Create a pending top-up.
+       * Create a pending top-up in Firestore.
        *
-       * This does NOT add money to the wallet.
+       * IMPORTANT:
+       * This does NOT increase the wallet balance.
        */
       final topUpId = await _walletService.createPendingTopUp(
         amount: amount,
@@ -144,8 +166,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       /*
        * STEP 2
        *
-       * Ask the user which installed UPI app
-       * should be used.
+       * Select an installed UPI application.
        */
       final selectedApp = await _selectUpiApp();
 
@@ -159,16 +180,24 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       }
 
       /*
-       * IMPORTANT:
+       * IMPORTANT
        *
-       * The receiver UPI ID below is only a placeholder
-       * for the payment-account integration.
-       *
-       * Replace this with your actual payment provider/
-       * merchant UPI configuration when the backend is ready.
+       * Replace this placeholder with the actual merchant/
+       * payment-provider UPI ID before production payments.
        */
-      const receiverUpiId = 'krevzy@upi';
+      const String receiverUpiId = 'krevzy@upi';
 
+      /*
+       * STEP 3
+       *
+       * Start UPI payment.
+       *
+       * The response from the UPI application is NOT sufficient
+       * to credit the KREVZY Wallet.
+       *
+       * A trusted backend/payment provider must verify the
+       * transaction first.
+       */
       final response = await _upiService.startTransaction(
         app: selectedApp,
         receiverUpiId: receiverUpiId,
@@ -180,15 +209,6 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         return;
       }
 
-      /*
-       * STEP 3
-       *
-       * Show the UPI response to the user.
-       *
-       * We DO NOT credit the wallet here.
-       *
-       * Backend verification must confirm the payment first.
-       */
       final status = response?.status?.toLowerCase();
 
       if (status == 'success') {
@@ -198,9 +218,9 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
           amount: amount,
           topUpId: topUpId,
           message:
-              'The UPI app reported a successful payment response. '
-              'Your KREVZY Wallet will be credited only after '
-              'payment verification.',
+              'The UPI application reported a successful response. '
+              'Your wallet will be credited only after payment '
+              'verification.',
         );
       } else if (status == 'submitted') {
         await _showPaymentResultDialog(
@@ -209,8 +229,9 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
           amount: amount,
           topUpId: topUpId,
           message:
-              'Your payment was submitted. Wallet credit will '
-              'happen only after payment verification.',
+              'Your payment was submitted successfully. '
+              'Wallet credit will happen only after payment '
+              'verification.',
         );
       } else if (status == 'failure' || status == 'failed') {
         await _showPaymentResultDialog(
@@ -219,8 +240,8 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
           amount: amount,
           topUpId: topUpId,
           message:
-              'The UPI payment was reported as failed. '
-              'Your KREVZY Wallet has not been credited.',
+              'The UPI application reported that the payment '
+              'failed. Your KREVZY Wallet has not been credited.',
         );
       } else if (response == null) {
         await _showPaymentResultDialog(
@@ -229,7 +250,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
           amount: amount,
           topUpId: topUpId,
           message:
-              'We could not confirm the UPI response. '
+              'The UPI response could not be confirmed. '
               'Your wallet has not been credited.',
         );
       } else {
@@ -239,17 +260,18 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
           amount: amount,
           topUpId: topUpId,
           message:
-              'The payment status is ${response.status ?? 'unknown'}. '
-              'Your wallet will remain unchanged until payment '
-              'verification is completed.',
+              'The payment status is '
+              '${response.status ?? 'unknown'}. '
+              'Your wallet will remain unchanged until '
+              'payment verification is completed.',
         );
       }
     } catch (e) {
+      debugPrint('KREVZY Add Money Error: $e');
+
       if (!mounted) {
         return;
       }
-
-      debugPrint('KREVZY Add Money Error: $e');
 
       _showMessage(_friendlyErrorMessage(e));
     } finally {
@@ -270,6 +292,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -286,12 +309,22 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 6),
-                const Text('Select an installed UPI app to continue.'),
+                Text(
+                  'Select an installed UPI app to continue.',
+                  style: Theme.of(sheetContext).textTheme.bodyMedium,
+                ),
                 const SizedBox(height: 18),
                 ..._upiApps.map((app) {
                   return ListTile(
                     contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                    leading: app.iconWidget(42),
+                    leading: const SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Icon(
+                        Icons.account_balance_wallet_rounded,
+                        size: 40,
+                      ),
+                    ),
                     title: Text(
                       app.name,
                       style: const TextStyle(fontWeight: FontWeight.w600),
@@ -331,8 +364,8 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
             ],
           ),
           content: const Text(
-            'No supported UPI application was found on this device. '
-            'Install a UPI app and try again.',
+            'No supported UPI application was found on '
+            'this device. Install a UPI app and try again.',
           ),
           actions: [
             TextButton(
@@ -413,7 +446,10 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
             FilledButton(
               onPressed: () {
                 Navigator.of(dialogContext).pop();
-                Navigator.of(context).pop();
+
+                if (mounted) {
+                  Navigator.of(context).pop();
+                }
               },
               child: const Text('Done'),
             ),
@@ -424,9 +460,9 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   }
 
   String _friendlyErrorMessage(Object error) {
-    final message = error.toString();
+    final message = error.toString().toLowerCase();
 
-    if (message.contains('User is not logged in')) {
+    if (message.contains('user is not logged in')) {
       return 'Please log in again and try.';
     }
 
@@ -434,12 +470,16 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       return 'Payment request permission was denied by Firebase.';
     }
 
-    if (message.contains('Maximum top-up')) {
-      return 'Maximum top-up amount is ₹100,000.';
+    if (message.contains('maximum top-up')) {
+      return 'Maximum top-up amount is ₹1,00,000.';
     }
 
-    if (message.contains('Amount must be greater')) {
+    if (message.contains('amount must be greater')) {
       return 'Please enter a valid amount.';
+    }
+
+    if (message.contains('network')) {
+      return 'Network error. Please check your internet connection.';
     }
 
     return 'Unable to start the payment. Please try again.';
@@ -576,10 +616,11 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                     SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        'Your wallet balance is not changed by this '
-                        'screen. After payment, the transaction must '
-                        'be verified by the trusted payment backend '
-                        'before wallet credit.',
+                        'Your wallet balance is not changed by '
+                        'this screen. After payment, the '
+                        'transaction must be verified by the '
+                        'trusted payment backend before wallet '
+                        'credit.',
                       ),
                     ),
                   ],
@@ -588,18 +629,37 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
 
               const SizedBox(height: 20),
 
-              if (!kIsWeb && _upiApps.isNotEmpty)
+              if (!kIsWeb)
                 Row(
                   children: [
-                    const Icon(Icons.check_circle_outline_rounded, size: 18),
+                    if (_isLoadingUpiApps)
+                      const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else if (_upiApps.isNotEmpty)
+                      const Icon(Icons.check_circle_outline_rounded, size: 18)
+                    else
+                      const Icon(Icons.info_outline_rounded, size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '${_upiApps.length} UPI app'
-                        '${_upiApps.length == 1 ? '' : 's'} available',
+                        _isLoadingUpiApps
+                            ? 'Checking UPI apps...'
+                            : _upiApps.isNotEmpty
+                            ? '${_upiApps.length} UPI app'
+                                  '${_upiApps.length == 1 ? '' : 's'} available'
+                            : 'No UPI apps detected',
                         style: theme.textTheme.bodyMedium,
                       ),
                     ),
+                    if (!_isLoadingUpiApps && !_isProcessing)
+                      IconButton(
+                        tooltip: 'Refresh UPI apps',
+                        onPressed: _loadUpiApps,
+                        icon: const Icon(Icons.refresh_rounded),
+                      ),
                   ],
                 ),
 
@@ -629,6 +689,17 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                 child: Text(
                   'Minimum ₹10 • Maximum ₹1,00,000',
                   style: theme.textTheme.bodySmall,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              Center(
+                child: Text(
+                  'Payments are subject to verification.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ),
             ],
