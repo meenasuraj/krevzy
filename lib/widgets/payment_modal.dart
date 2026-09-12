@@ -1,18 +1,25 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../services/upi_service.dart';
 
 class PaymentModal extends StatefulWidget {
-  final String receiverUpiId;
+  final double amount;
+
   final String receiverName;
-  final Function(String statusMessage) onPaymentCompleted;
+
+  final String receiverUpiId;
+
+  final String transactionRef;
+
+  final String transactionNote;
 
   const PaymentModal({
     super.key,
-    required this.receiverUpiId,
-    required this.receiverName,
-    required this.onPaymentCompleted,
+    required this.amount,
+    this.receiverName = 'KREVZY',
+    this.receiverUpiId = 'krevzy@upi',
+    required this.transactionRef,
+    this.transactionNote = 'KREVZY Wallet Top Up',
   });
 
   @override
@@ -20,222 +27,193 @@ class PaymentModal extends StatefulWidget {
 }
 
 class _PaymentModalState extends State<PaymentModal> {
-  final TextEditingController _amountController = TextEditingController();
+  final UpiService _upiService = UpiService.instance;
 
-  final UpiService _upiService = UpiService();
+  bool _loading = false;
 
-  List<UpiApp> _upiApps = <UpiApp>[];
+  String? _message;
 
-  bool _isLoading = true;
-  bool _isProcessing = false;
+  bool _error = false;
 
-  @override
-  void initState() {
-    super.initState();
-    fetchUpiApps();
-  }
-
-  @override
-  void dispose() {
-    _amountController.dispose();
-    super.dispose();
-  }
-
-  Future<void> fetchUpiApps() async {
-    if (kIsWeb) {
-      debugPrint('UPI payments are not supported on Web.');
-
-      if (mounted) {
-        setState(() {
-          _upiApps = <UpiApp>[];
-          _isLoading = false;
-        });
-      }
-
+  Future<void> _startPayment() async {
+    if (_loading) {
       return;
     }
 
-    try {
-      final List<UpiApp> apps = await _upiService.getInstalledApps();
+    setState(() {
+      _loading = true;
+      _message = null;
+      _error = false;
+    });
 
+    try {
+      final response = await _upiService.startTransaction(
+        amount: widget.amount.toStringAsFixed(2),
+        receiverName: widget.receiverName,
+        receiverUpiId: widget.receiverUpiId,
+        transactionRef: widget.transactionRef,
+        transactionNote: widget.transactionNote,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (response.isSuccess) {
+        setState(() {
+          _loading = false;
+          _message =
+              'Payment submitted successfully. '
+              'Verification is required before wallet credit.';
+        });
+      } else if (response.isPending || response.isSubmitted) {
+        setState(() {
+          _loading = false;
+          _message =
+              'Payment is pending. '
+              'Wallet credit will appear after verification.';
+        });
+      } else if (response.isCancelled) {
+        setState(() {
+          _loading = false;
+          _error = true;
+          _message = 'Payment was cancelled.';
+        });
+      } else if (response.isFailure) {
+        setState(() {
+          _loading = false;
+          _error = true;
+          _message = 'Payment failed.';
+        });
+      } else {
+        setState(() {
+          _loading = false;
+          _message =
+              'Payment response received. '
+              'Please wait for verification.';
+        });
+      }
+    } catch (e) {
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _upiApps = apps;
-        _isLoading = false;
+        _loading = false;
+        _error = true;
+        _message = _cleanError(e);
       });
-    } catch (e, stackTrace) {
-      debugPrint('UPI Fetch Error: $e');
-      debugPrintStack(stackTrace: stackTrace);
-
-      if (mounted) {
-        setState(() {
-          _upiApps = <UpiApp>[];
-          _isLoading = false;
-        });
-      }
     }
   }
 
-  Future<void> _initiateTransaction(UpiApp app) async {
-    if (_isProcessing) {
-      return;
+  String _cleanError(Object error) {
+    final text = error.toString();
+
+    if (text.startsWith('Exception: ')) {
+      return text.substring(11);
     }
 
-    final String amountText = _amountController.text.trim();
-
-    final double? amount = double.tryParse(amountText);
-
-    if (amountText.isEmpty ||
-        amount == null ||
-        !amount.isFinite ||
-        amount <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter a valid amount')),
-      );
-      return;
-    }
-
-    setState(() {
-      _isProcessing = true;
-    });
-
-    try {
-      final UpiResponse? response = await _upiService.startTransaction(
-        app: app,
-        receiverUpiId: widget.receiverUpiId,
-        receiverName: widget.receiverName,
-        amount: amount,
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      if (response == null) {
-        widget.onPaymentCompleted(
-          'Payment status unavailable. '
-          'Please verify the payment before crediting any wallet balance.',
-        );
-      } else {
-        widget.onPaymentCompleted('Status: ${response.status ?? 'unknown'}');
-      }
-
-      Navigator.of(context).pop();
-    } catch (e, stackTrace) {
-      debugPrint('KREVZY Payment Transaction Error: $e');
-      debugPrintStack(stackTrace: stackTrace);
-
-      if (!mounted) {
-        return;
-      }
-
-      widget.onPaymentCompleted('Transaction failed: $e');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isProcessing = false;
-        });
-      }
-    }
+    return text;
   }
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Send Payment',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    final theme = Theme.of(context);
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  color: theme.dividerColor,
+                ),
               ),
-              IconButton(
-                icon: const Icon(Icons.close),
-                onPressed: _isProcessing ? null : () => Navigator.pop(context),
+            ),
+
+            const SizedBox(height: 22),
+
+            Text(
+              'UPI Payment',
+              style: theme.textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              '₹${widget.amount.toStringAsFixed(2)}',
+              style: theme.textTheme.headlineMedium?.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
+              textAlign: TextAlign.center,
+            ),
+
+            const SizedBox(height: 8),
+
+            Text(
+              'Choose your installed UPI app '
+              'from the Android payment chooser.',
+              textAlign: TextAlign.center,
+            ),
+
+            if (_message != null) ...[
+              const SizedBox(height: 18),
+
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  color: _error
+                      ? theme.colorScheme.error.withValues(alpha: 0.10)
+                      : theme.colorScheme.primary.withValues(alpha: 0.10),
+                ),
+                child: Text(
+                  _message!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _error
+                        ? theme.colorScheme.error
+                        : theme.colorScheme.primary,
+                  ),
+                ),
               ),
             ],
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _amountController,
-            enabled: !_isProcessing,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Enter Amount (₹)',
-              prefixText: '₹ ',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Text(
-            'Select App to Pay:',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-          ),
-          const SizedBox(height: 12),
-          if (_isLoading)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (_upiApps.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text(
-                'Koi supported UPI app nahi mila. '
-                'Android/iOS device par try karein.',
-                style: TextStyle(color: Colors.grey),
+
+            const SizedBox(height: 22),
+
+            SizedBox(
+              height: 52,
+              child: FilledButton.icon(
+                onPressed: _loading ? null : _startPayment,
+                icon: _loading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.payment),
+                label: Text(_loading ? 'Opening UPI...' : 'Pay with UPI'),
               ),
-            )
-          else
-            Wrap(
-              spacing: 16,
-              runSpacing: 16,
-              children: _upiApps.map((app) {
-                return InkWell(
-                  onTap: _isProcessing ? null : () => _initiateTransaction(app),
-                  borderRadius: BorderRadius.circular(12),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        SizedBox(
-                          width: 52,
-                          height: 52,
-                          child: app.iconWidget(52),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          app.name,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }).toList(),
             ),
-          if (_isProcessing) ...[
-            const SizedBox(height: 20),
-            const Center(child: CircularProgressIndicator()),
+
+            const SizedBox(height: 10),
+
+            TextButton(
+              onPressed: _loading ? null : () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
           ],
-        ],
+        ),
       ),
     );
   }
