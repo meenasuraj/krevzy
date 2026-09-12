@@ -168,7 +168,6 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         return;
       }
 
-      // TODO:
       // Replace this placeholder with the actual merchant/
       // payment-provider UPI ID before production.
       const String receiverUpiId = 'krevzy@upi';
