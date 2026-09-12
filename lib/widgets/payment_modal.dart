@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:upi_india/upi_india.dart';
+
+import '../services/upi_service.dart';
 
 class PaymentModal extends StatefulWidget {
   final String receiverUpiId;
@@ -20,9 +21,13 @@ class PaymentModal extends StatefulWidget {
 
 class _PaymentModalState extends State<PaymentModal> {
   final TextEditingController _amountController = TextEditingController();
-  final UpiIndia _upiIndia = UpiIndia();
-  List<UpiApp> _upiApps = [];
+
+  final UpiService _upiService = UpiService();
+
+  List<UpiApp> _upiApps = <UpiApp>[];
+
   bool _isLoading = true;
+  bool _isProcessing = false;
 
   @override
   void initState() {
@@ -30,32 +35,44 @@ class _PaymentModalState extends State<PaymentModal> {
     fetchUpiApps();
   }
 
-  // 🟢 Fixed: Parameter removed from getAllUpiApps()
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
+
   Future<void> fetchUpiApps() async {
     if (kIsWeb) {
-      debugPrint("UPI payments are not supported on Web.");
+      debugPrint('UPI payments are not supported on Web.');
+
       if (mounted) {
         setState(() {
-          _upiApps = [];
+          _upiApps = <UpiApp>[];
           _isLoading = false;
         });
       }
+
       return;
     }
 
     try {
-      final apps = await _upiIndia.getAllUpiApps();
-      if (mounted) {
-        setState(() {
-          _upiApps = apps;
-          _isLoading = false;
-        });
+      final List<UpiApp> apps = await _upiService.getInstalledApps();
+
+      if (!mounted) {
+        return;
       }
-    } catch (e) {
-      debugPrint("UPI Fetch Error: $e");
+
+      setState(() {
+        _upiApps = apps;
+        _isLoading = false;
+      });
+    } catch (e, stackTrace) {
+      debugPrint('UPI Fetch Error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
       if (mounted) {
         setState(() {
-          _upiApps = [];
+          _upiApps = <UpiApp>[];
           _isLoading = false;
         });
       }
@@ -63,30 +80,65 @@ class _PaymentModalState extends State<PaymentModal> {
   }
 
   Future<void> _initiateTransaction(UpiApp app) async {
-    final amountText = _amountController.text.trim();
+    if (_isProcessing) {
+      return;
+    }
+
+    final String amountText = _amountController.text.trim();
+
     final double? amount = double.tryParse(amountText);
 
-    if (amountText.isEmpty || amount == null || amount <= 0) {
+    if (amountText.isEmpty ||
+        amount == null ||
+        !amount.isFinite ||
+        amount <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please enter a valid amount')),
       );
       return;
     }
 
+    setState(() {
+      _isProcessing = true;
+    });
+
     try {
-      final UpiResponse response = await _upiIndia.startTransaction(
+      final UpiResponse? response = await _upiService.startTransaction(
         app: app,
         receiverUpiId: widget.receiverUpiId,
         receiverName: widget.receiverName,
-        transactionRefId: 'TXN${DateTime.now().millisecondsSinceEpoch}',
-        transactionNote: 'KREVZY Payment',
         amount: amount,
       );
 
-      widget.onPaymentCompleted('Status: ${response.status}');
-      if (mounted) Navigator.pop(context);
-    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      if (response == null) {
+        widget.onPaymentCompleted(
+          'Payment status unavailable. '
+          'Please verify the payment before crediting any wallet balance.',
+        );
+      } else {
+        widget.onPaymentCompleted('Status: ${response.status ?? 'unknown'}');
+      }
+
+      Navigator.of(context).pop();
+    } catch (e, stackTrace) {
+      debugPrint('KREVZY Payment Transaction Error: $e');
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (!mounted) {
+        return;
+      }
+
       widget.onPaymentCompleted('Transaction failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
     }
   }
 
@@ -112,13 +164,14 @@ class _PaymentModalState extends State<PaymentModal> {
               ),
               IconButton(
                 icon: const Icon(Icons.close),
-                onPressed: () => Navigator.pop(context),
+                onPressed: _isProcessing ? null : () => Navigator.pop(context),
               ),
             ],
           ),
           const SizedBox(height: 16),
           TextField(
             controller: _amountController,
+            enabled: !_isProcessing,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               labelText: 'Enter Amount (₹)',
@@ -133,16 +186,16 @@ class _PaymentModalState extends State<PaymentModal> {
           ),
           const SizedBox(height: 12),
           if (_isLoading)
-            // 🟢 Fixed: Center inside Padding Widget
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 20),
               child: Center(child: CircularProgressIndicator()),
             )
           else if (_upiApps.isEmpty)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16.0),
+              padding: EdgeInsets.symmetric(vertical: 16),
               child: Text(
-                'Koi supported UPI app nahi mila. Web par chalane ke bajaye Android Device ya Emulator par run karein.',
+                'Koi supported UPI app nahi mila. '
+                'Android/iOS device par try karein.',
                 style: TextStyle(color: Colors.grey),
               ),
             )
@@ -152,24 +205,25 @@ class _PaymentModalState extends State<PaymentModal> {
               runSpacing: 16,
               children: _upiApps.map((app) {
                 return InkWell(
-                  onTap: () => _initiateTransaction(app),
+                  onTap: _isProcessing ? null : () => _initiateTransaction(app),
                   borderRadius: BorderRadius.circular(12),
                   child: Padding(
-                    padding: const EdgeInsets.all(8.0),
+                    padding: const EdgeInsets.all(8),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Image.memory(
-                          app.icon,
-                          height: 52,
+                        SizedBox(
                           width: 52,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(Icons.account_balance_wallet, size: 48),
+                          height: 52,
+                          child: app.iconWidget(52),
                         ),
                         const SizedBox(height: 6),
                         Text(
                           app.name,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ],
                     ),
@@ -177,6 +231,10 @@ class _PaymentModalState extends State<PaymentModal> {
                 );
               }).toList(),
             ),
+          if (_isProcessing) ...[
+            const SizedBox(height: 20),
+            const Center(child: CircularProgressIndicator()),
+          ],
         ],
       ),
     );

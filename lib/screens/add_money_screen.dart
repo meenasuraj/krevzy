@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:upi_india/upi_india.dart';
 
 import '../services/upi_service.dart';
 import '../services/wallet_service.dart';
@@ -42,12 +41,14 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       return;
     }
 
-    setState(() {
-      _isLoadingUpiApps = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isLoadingUpiApps = true;
+      });
+    }
 
     try {
-      final apps = await _upiService.getInstalledApps();
+      final List<UpiApp> apps = await _upiService.getInstalledApps();
 
       if (!mounted) {
         return;
@@ -56,8 +57,9 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       setState(() {
         _upiApps = apps;
       });
-    } catch (e) {
+    } catch (e, stackTrace) {
       debugPrint('KREVZY UPI app discovery error: $e');
+      debugPrintStack(stackTrace: stackTrace);
 
       if (!mounted) {
         return;
@@ -86,13 +88,13 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   }
 
   double? _parseAmount() {
-    final text = _amountController.text.trim();
+    final String text = _amountController.text.trim();
 
     if (text.isEmpty) {
       return null;
     }
 
-    final amount = double.tryParse(text);
+    final double? amount = double.tryParse(text);
 
     if (amount == null || !amount.isFinite || amount <= 0) {
       return null;
@@ -106,7 +108,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
       return;
     }
 
-    final amount = _parseAmount();
+    final double? amount = _parseAmount();
 
     if (amount == null) {
       _showMessage('Please enter a valid amount.');
@@ -146,15 +148,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
     });
 
     try {
-      /*
-       * STEP 1
-       *
-       * Create a pending top-up in Firestore.
-       *
-       * IMPORTANT:
-       * This does NOT increase the wallet balance.
-       */
-      final topUpId = await _walletService.createPendingTopUp(
+      final String topUpId = await _walletService.createPendingTopUp(
         amount: amount,
         provider: 'upi',
       );
@@ -163,12 +157,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         return;
       }
 
-      /*
-       * STEP 2
-       *
-       * Select an installed UPI application.
-       */
-      final selectedApp = await _selectUpiApp();
+      final UpiApp? selectedApp = await _selectUpiApp();
 
       if (!mounted) {
         return;
@@ -179,26 +168,12 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         return;
       }
 
-      /*
-       * IMPORTANT
-       *
-       * Replace this placeholder with the actual merchant/
-       * payment-provider UPI ID before production payments.
-       */
+      // TODO:
+      // Replace this placeholder with the actual merchant/
+      // payment-provider UPI ID before production.
       const String receiverUpiId = 'krevzy@upi';
 
-      /*
-       * STEP 3
-       *
-       * Start UPI payment.
-       *
-       * The response from the UPI application is NOT sufficient
-       * to credit the KREVZY Wallet.
-       *
-       * A trusted backend/payment provider must verify the
-       * transaction first.
-       */
-      final response = await _upiService.startTransaction(
+      final UpiResponse? response = await _upiService.startTransaction(
         app: selectedApp,
         receiverUpiId: receiverUpiId,
         receiverName: 'KREVZY',
@@ -209,7 +184,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
         return;
       }
 
-      final status = response?.status?.toLowerCase();
+      final String? status = response?.status?.toLowerCase();
 
       if (status == 'success') {
         await _showPaymentResultDialog(
@@ -317,13 +292,10 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                 ..._upiApps.map((app) {
                   return ListTile(
                     contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                    leading: const SizedBox(
+                    leading: SizedBox(
                       width: 44,
                       height: 44,
-                      child: Icon(
-                        Icons.account_balance_wallet_rounded,
-                        size: 40,
-                      ),
+                      child: app.iconWidget(40),
                     ),
                     title: Text(
                       app.name,
@@ -460,7 +432,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
   }
 
   String _friendlyErrorMessage(Object error) {
-    final message = error.toString().toLowerCase();
+    final String message = error.toString().toLowerCase();
 
     if (message.contains('user is not logged in')) {
       return 'Please log in again and try.';
@@ -497,7 +469,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+    final ThemeData theme = Theme.of(context);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Add Money')),
@@ -547,18 +519,14 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 28),
-
               Text(
                 'Enter amount',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
-
               const SizedBox(height: 12),
-
               TextField(
                 controller: _amountController,
                 enabled: !_isProcessing,
@@ -577,18 +545,14 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 18),
-
               Text(
                 'Quick amounts',
                 style: theme.textTheme.titleSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
               ),
-
               const SizedBox(height: 10),
-
               Wrap(
                 spacing: 10,
                 runSpacing: 10,
@@ -599,9 +563,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   );
                 }).toList(),
               ),
-
               const SizedBox(height: 30),
-
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -626,9 +588,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   ],
                 ),
               ),
-
               const SizedBox(height: 20),
-
               if (!kIsWeb)
                 Row(
                   children: [
@@ -662,9 +622,7 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                       ),
                   ],
                 ),
-
               const SizedBox(height: 24),
-
               SizedBox(
                 width: double.infinity,
                 height: 54,
@@ -682,18 +640,14 @@ class _AddMoneyScreenState extends State<AddMoneyScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 16),
-
               Center(
                 child: Text(
                   'Minimum ₹10 • Maximum ₹1,00,000',
                   style: theme.textTheme.bodySmall,
                 ),
               ),
-
               const SizedBox(height: 8),
-
               Center(
                 child: Text(
                   'Payments are subject to verification.',
