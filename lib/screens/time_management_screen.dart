@@ -1,0 +1,65 @@
+import 'package:flutter/material.dart';
+
+import '../services/krevzy_social_settings_service.dart';
+
+class TimeManagementScreen extends StatefulWidget {
+  const TimeManagementScreen({super.key});
+  @override
+  State<TimeManagementScreen> createState() => _TimeManagementScreenState();
+}
+
+class _TimeManagementScreenState extends State<TimeManagementScreen> {
+  int minutes = 0;
+  bool reminders = true;
+  Future<void> save() async {
+    await KrevzySocialSettingsService.setValue(
+      'daily_time_limit_minutes',
+      minutes,
+    );
+    await KrevzySocialSettingsService.setValue(
+      'take_break_reminders',
+      reminders,
+    );
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Time management saved.')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('Time management')),
+    body: ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Daily time limit',
+          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        DropdownButtonFormField<int>(
+          initialValue: minutes,
+          items: [0, 15, 30, 60, 120]
+              .map(
+                (v) => DropdownMenuItem(
+                  value: v,
+                  child: Text(v == 0 ? 'No limit' : '$v minutes'),
+                ),
+              )
+              .toList(),
+          onChanged: (v) => setState(() => minutes = v ?? 0),
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Take a break reminder'),
+          value: reminders,
+          onChanged: (v) => setState(() => reminders = v),
+        ),
+        const SizedBox(height: 12),
+        FilledButton(onPressed: save, child: const Text('Save')),
+      ],
+    ),
+  );
+}

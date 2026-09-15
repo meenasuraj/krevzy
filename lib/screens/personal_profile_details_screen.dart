@@ -1,0 +1,124 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import '../services/account_center_service.dart';
+
+class PersonalProfileDetailsScreen extends StatefulWidget {
+  const PersonalProfileDetailsScreen({super.key});
+  @override
+  State<PersonalProfileDetailsScreen> createState() =>
+      _PersonalProfileDetailsScreenState();
+}
+
+class _PersonalProfileDetailsScreenState
+    extends State<PersonalProfileDetailsScreen> {
+  final name = TextEditingController(),
+      username = TextEditingController(),
+      bio = TextEditingController();
+  bool loading = true, saving = false;
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    name.dispose();
+    username.dispose();
+    bio.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final u = FirebaseAuth.instance.currentUser;
+    if (u == null) return;
+    final d = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(u.uid)
+        .get();
+    final x = d.data() ?? {};
+    name.text = (x['name'] ?? u.displayName ?? '').toString();
+    username.text = (x['username'] ?? '').toString();
+    bio.text = (x['bio'] ?? '').toString();
+    if (mounted) setState(() => loading = false);
+  }
+
+  Future<void> _save() async {
+    if (name.text.trim().isEmpty || username.text.trim().isEmpty) {
+      return _msg('Name and username are required.');
+    }
+    setState(() => saving = true);
+    try {
+      await AccountCenterService.updateProfile(
+        name: name.text,
+        username: username.text,
+        bio: bio.text,
+      );
+      if (mounted) {
+        _msg('Profile details saved.');
+        Navigator.pop(context, true);
+      }
+    } catch (e) {
+      if (mounted) _msg(e.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => saving = false);
+    }
+  }
+
+  void _msg(String s) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(s)));
+  }
+
+  @override
+  Widget build(BuildContext c) => Scaffold(
+    appBar: AppBar(title: const Text('Personal and profile details')),
+    body: loading
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              const Text(
+                'Your information',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text('Keep your KREVZY profile information up to date.'),
+              const SizedBox(height: 24),
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  prefixIcon: Icon(Icons.person_outline),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: username,
+                decoration: const InputDecoration(
+                  labelText: 'Username',
+                  prefixIcon: Icon(Icons.alternate_email),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: bio,
+                maxLines: 4,
+                decoration: const InputDecoration(
+                  labelText: 'Bio',
+                  prefixIcon: Icon(Icons.notes_outlined),
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: saving ? null : _save,
+                child: Text(saving ? 'Saving...' : 'Save changes'),
+              ),
+            ],
+          ),
+  );
+}

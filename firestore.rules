@@ -1,0 +1,1086 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // =========================================================================
+    // USERS
+    // =========================================================================
+
+    match /users/{userId} {
+
+      // Authenticated users can read basic user documents because the
+      // current app resolves usernames and profile data from /users.
+      // Writes remain restricted to the account owner.
+      allow read:
+        if request.auth != null;
+
+      allow create, update:
+        if request.auth != null
+        && request.auth.uid == userId;
+
+      // =========================================================================
+      // CHAT SETTINGS / CHAT BACKGROUNDS
+      // =========================================================================
+
+      match /chatSettings/{chatId} {
+
+        allow read, create, update, delete:
+          if request.auth != null
+          && request.auth.uid == userId;
+      }
+
+      // =========================================================================
+      // NOTIFICATIONS
+      // =========================================================================
+
+      match /notifications/{notificationId} {
+
+        allow read:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow update, delete:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create:
+          if request.auth != null;
+      }
+
+      // =========================================================================
+      // PERSONAL NOTES
+      // =========================================================================
+
+      match /notes/{noteId} {
+
+        allow read:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create:
+          if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.title is string
+          && request.resource.data.content is string
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.content.size() <= 10000;
+
+        allow update:
+          if request.auth != null
+          && request.auth.uid == userId
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.title is string
+          && request.resource.data.content is string
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.content.size() <= 10000;
+
+        allow delete:
+          if request.auth != null
+          && request.auth.uid == userId
+          && resource.data.userId == request.auth.uid;
+      }
+
+      // =========================================================================
+      // FOLLOWING
+      // =========================================================================
+
+      match /following/{followedUserId} {
+
+        allow read:
+          if request.auth != null;
+
+        allow create:
+          if request.auth != null
+          && request.auth.uid == userId
+          && followedUserId != request.auth.uid;
+
+        allow delete:
+          if request.auth != null
+          && request.auth.uid == userId
+          && followedUserId != request.auth.uid;
+
+        allow update:
+          if false;
+      }
+
+      // =========================================================================
+      // FOLLOWERS
+      // =========================================================================
+
+      match /followers/{followerUserId} {
+
+        allow read:
+          if request.auth != null;
+
+        allow create:
+          if request.auth != null
+          && request.auth.uid == followerUserId
+          && userId != request.auth.uid;
+
+        allow delete:
+          if request.auth != null
+          && request.auth.uid == followerUserId
+          && userId != request.auth.uid;
+
+        allow update:
+          if false;
+      }
+    }
+
+    // =========================================================================
+    // SAVED POSTS
+    // =========================================================================
+
+    match /users/{userId}/savedPosts/{postId} {
+
+      allow read, create, delete:
+        if request.auth != null
+        && request.auth.uid == userId;
+
+      allow update:
+        if false;
+    }
+
+    // =========================================================================
+    // BLOCKED ACCOUNTS
+    // =========================================================================
+
+    match /users/{userId}/blocked/{blockedUserId} {
+
+      allow read, create, delete:
+        if request.auth != null
+        && request.auth.uid == userId;
+
+      allow update:
+        if false;
+    }
+
+    // =========================================================================
+    // ACTIVE SESSIONS
+    // =========================================================================
+
+    match /users/{userId}/sessions/{sessionId} {
+
+      allow read, create, update, delete:
+        if request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    // =========================================================================
+    // KREVZY SETTINGS
+    // =========================================================================
+
+    match /users/{userId}/settings/{settingId} {
+
+      allow read, create, update, delete:
+        if request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    // =========================================================================
+    // ACTIVITY
+    // =========================================================================
+
+    match /users/{userId}/activity/{activityId} {
+
+      allow read, create, update, delete:
+        if request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    // =========================================================================
+    // SOCIAL LISTS
+    // =========================================================================
+
+    match /users/{userId}/{listName}/{personId} {
+
+      allow read, create, update, delete:
+        if request.auth != null
+        && request.auth.uid == userId
+        && listName in [
+          'closeFriends',
+          'favourites',
+          'mutedAccounts',
+          'restrictedAccounts'
+        ];
+    }
+
+    // =========================================================================
+    // FEEDBACK
+    // =========================================================================
+
+    match /feedback/{feedbackId} {
+
+      allow create:
+        if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.message is string
+        && request.resource.data.message.size() > 0
+        && request.resource.data.message.size() <= 2000;
+
+      allow read, update, delete:
+        if request.auth != null
+        && resource.data.userId == request.auth.uid;
+    }
+
+    // =========================================================================
+    // POSTS
+    // =========================================================================
+
+    match /posts/{postId} {
+
+      // -----------------------------------------------------------------------
+      // READ
+      // -----------------------------------------------------------------------
+
+      allow read:
+        if request.auth != null;
+
+      // -----------------------------------------------------------------------
+      // CREATE
+      // -----------------------------------------------------------------------
+
+      allow create:
+        if request.auth != null
+        && request.resource.data.userId == request.auth.uid;
+
+      // -----------------------------------------------------------------------
+      // UPDATE
+      // -----------------------------------------------------------------------
+
+      allow update:
+        if request.auth != null
+        && (
+
+          // Owner can update their own post.
+          resource.data.userId == request.auth.uid
+
+          ||
+
+          // Like / unlike count update.
+          (
+            request.resource.data.userId == resource.data.userId
+
+            && request.resource.data.username == resource.data.username
+
+            && request.resource.data.userName == resource.data.userName
+
+            && request.resource.data.userPhotoUrl == resource.data.userPhotoUrl
+
+            && request.resource.data.caption == resource.data.caption
+
+            && request.resource.data.mediaUrl == resource.data.mediaUrl
+
+            && request.resource.data.mediaType == resource.data.mediaType
+
+            && request.resource.data.commentsCount == resource.data.commentsCount
+
+            && (
+              (
+                request.resource.data.likesCount == resource.data.likesCount + 1
+
+                && existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)
+                )
+
+                && !exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)
+                )
+              )
+
+              ||
+
+              (
+                request.resource.data.likesCount == resource.data.likesCount - 1
+
+                && !existsAfter(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)
+                )
+
+                && exists(/databases/$(database)/documents/posts/$(postId)/likes/$(request.auth.uid)
+                )
+              )
+            )
+          )
+
+          ||
+
+          // Comment count update.
+          (
+            request.resource.data.userId == resource.data.userId
+
+            && request.resource.data.username == resource.data.username
+
+            && request.resource.data.userName == resource.data.userName
+
+            && request.resource.data.userPhotoUrl == resource.data.userPhotoUrl
+
+            && request.resource.data.caption == resource.data.caption
+
+            && request.resource.data.mediaUrl == resource.data.mediaUrl
+
+            && request.resource.data.mediaType == resource.data.mediaType
+
+            && request.resource.data.likesCount == resource.data.likesCount
+
+            && (request.resource.data.commentsCount == resource.data.commentsCount + 1
+              ||
+              request.resource.data.commentsCount == resource.data.commentsCount - 1
+            )
+          )
+        );
+
+      // -----------------------------------------------------------------------
+      // DELETE
+      // -----------------------------------------------------------------------
+
+      allow delete:
+        if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      // -----------------------------------------------------------------------
+      // LIKES
+      // -----------------------------------------------------------------------
+
+      match /likes/{userId} {
+
+        allow read:
+          if request.auth != null;
+
+        allow create:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow delete:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow update:
+          if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // COMMENTS
+      // -----------------------------------------------------------------------
+
+      match /comments/{commentId} {
+
+        allow read:
+          if request.auth != null;
+
+        allow create:
+          if request.auth != null
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.username is string
+          && request.resource.data.userName is string
+          && request.resource.data.userPhotoUrl is string;
+
+        allow update:
+          if request.auth != null
+          && resource.data.userId == request.auth.uid;
+
+        allow delete:
+          if request.auth != null
+          && resource.data.userId == request.auth.uid;
+      }
+    }
+
+    // =========================================================================
+    // CHATS
+    // =========================================================================
+
+    match /chats/{chatId} {
+
+      // -----------------------------------------------------------------------
+      // GET CHAT
+      // -----------------------------------------------------------------------
+
+      allow get:
+        if request.auth != null
+        && (
+          resource == null
+          ||
+          (
+            resource.data.participants is list
+            && request.auth.uid in resource.data.participants
+          )
+        );
+
+      // -----------------------------------------------------------------------
+      // LIST CHATS
+      // -----------------------------------------------------------------------
+
+      allow list:
+        if request.auth != null
+        && request.auth.uid in resource.data.participants;
+
+      // -----------------------------------------------------------------------
+      // CREATE CHAT
+      // -----------------------------------------------------------------------
+
+      allow create:
+        if request.auth != null
+        && request.resource.data.participants is list
+        && request.resource.data.participants.size() == 2
+        && request.auth.uid in request.resource.data.participants
+        && request.resource.data.participants[0] is string
+        && request.resource.data.participants[1] is string
+        && request.resource.data.participants[0] !=
+           request.resource.data.participants[1];
+
+      // -----------------------------------------------------------------------
+      // UPDATE CHAT
+      // -----------------------------------------------------------------------
+
+      allow update:
+        if request.auth != null
+        && resource.data.participants is list
+        && request.auth.uid in resource.data.participants
+        && request.resource.data.participants ==
+           resource.data.participants
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly([
+               'lastMessage',
+               'lastMessageTime',
+               'lastMessageSenderId',
+               'unreadCounts',
+               'typingUsers'
+             ]);
+
+      // -----------------------------------------------------------------------
+      // DELETE CHAT
+      // -----------------------------------------------------------------------
+
+      allow delete:
+        if request.auth != null
+        && resource.data.participants is list
+        && request.auth.uid in resource.data.participants;
+
+      // =========================================================================
+      // CHAT MESSAGES
+      // =========================================================================
+
+      match /messages/{messageId} {
+
+        // -----------------------------------------------------------------------
+        // READ
+        // -----------------------------------------------------------------------
+
+        allow read:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/chats/$(chatId)
+          )
+          && request.auth.uid in
+             get(/databases/$(database)/documents/chats/$(chatId)
+             ).data.participants;
+
+        // -----------------------------------------------------------------------
+        // CREATE
+        // -----------------------------------------------------------------------
+
+        allow create:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/chats/$(chatId)
+          )
+          && request.auth.uid in
+             get(
+               /databases/$(database)/documents/chats/$(chatId)
+             ).data.participants
+          && request.resource.data.senderId ==
+             request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.timestamp is timestamp
+          && request.resource.data.isRead is bool
+          && request.resource.data.readAt == null
+          && request.resource.data.keys().hasOnly([
+               'senderId',
+               'text',
+               'timestamp',
+               'isRead',
+               'readAt'
+             ]);
+
+        // -----------------------------------------------------------------------
+        // UPDATE / READ RECEIPT
+        // -----------------------------------------------------------------------
+
+        allow update:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/chats/$(chatId)
+          )
+          && request.auth.uid in
+             get(
+               /databases/$(database)/documents/chats/$(chatId)
+             ).data.participants
+          && resource.data.senderId != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly([
+                 'isRead',
+                 'readAt'
+               ])
+          && request.resource.data.isRead == true
+          && request.resource.data.readAt is timestamp;
+
+        // -----------------------------------------------------------------------
+        // DELETE
+        // -----------------------------------------------------------------------
+
+        allow delete:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/chats/$(chatId)
+          )
+          && request.auth.uid in
+             get(/databases/$(database)/documents/chats/$(chatId)).data.participants
+          && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // =========================================================================
+    // 1:1 AUDIO / VIDEO CALLS
+    // =========================================================================
+
+    match /calls/{callId} {
+
+      allow create:
+        if request.auth != null
+        && request.resource.data.callerId == request.auth.uid
+        && request.resource.data.calleeId is string
+        && request.resource.data.calleeId != request.auth.uid
+        && request.resource.data.type in ['audio', 'video']
+        && request.resource.data.status == 'ringing';
+
+      allow get, list:
+        if request.auth != null
+        && (resource.data.callerId == request.auth.uid
+          ||
+          resource.data.calleeId == request.auth.uid
+        );
+
+      allow update:
+        if request.auth != null
+        && (resource.data.callerId == request.auth.uid
+          ||
+          resource.data.calleeId == request.auth.uid
+        )
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly([
+               'offer',
+               'answer',
+               'status',
+               'updatedAt'
+             ]);
+
+      allow delete:
+        if false;
+
+      match /callerCandidates/{candidateId} {
+
+        allow read, create:
+          if request.auth != null
+          && (get(/databases/$(database)/documents/calls/$(callId)).data.callerId == request.auth.uid
+
+            ||
+
+            get(/databases/$(database)/documents/calls/$(callId)).data.calleeId == request.auth.uid);
+
+        allow update, delete:
+          if false;
+      }
+
+      match /calleeCandidates/{candidateId} {
+
+        allow read, create:
+          if request.auth != null
+          && (get(/databases/$(database)/documents/calls/$(callId)).data.callerId == request.auth.uid
+
+            ||
+
+            get(
+              /databases/$(database)/documents/calls/$(callId)
+            ).data.calleeId == request.auth.uid
+          );
+
+        allow update, delete:
+          if false;
+      }
+    }
+
+    // =========================================================================
+    // KREVZY ROOMS
+    // =========================================================================
+
+    match /rooms/{roomId} {
+
+      allow read:
+        if request.auth != null
+        && (
+          resource.data.isPublic == true
+          ||
+          resource.data.ownerId == request.auth.uid
+        );
+
+      allow create:
+        if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 3
+        && request.resource.data.name.size() <= 80
+        && request.resource.data.username is string
+        && request.resource.data.description is string
+        && request.resource.data.category is string
+        && request.resource.data.isPublic is bool
+        && request.resource.data.requiresApproval is bool
+        && request.resource.data.maxMembers is int;
+
+      allow update:
+        if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+
+      allow delete:
+        if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+
+      match /members/{memberId} {
+
+        allow read:
+          if request.auth != null;
+
+        allow create:
+          if request.auth != null
+          && (request.auth.uid == memberId
+            ||
+            get(/databases/$(database)/documents/rooms/$(roomId)).data.ownerId == request.auth.uid);
+
+        allow update, delete:
+          if request.auth != null
+          && (request.auth.uid == memberId
+            ||
+            get(/databases/$(database)/documents/rooms/$(roomId)).data.ownerId == request.auth.uid);
+      }
+
+      match /messages/{messageId} {
+
+        allow read:
+          if request.auth != null;
+
+        allow create:
+          if request.auth != null
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 500
+          && request.resource.data.createdAt is timestamp;
+
+        allow update, delete:
+          if request.auth != null
+          && resource.data.senderId == request.auth.uid;
+      }
+
+      match /joinRequests/{requesterId} {
+
+        allow create:
+          if request.auth != null
+          && request.auth.uid == requesterId;
+
+        allow read:
+          if request.auth != null
+          && (request.auth.uid == requesterId
+            ||
+            get(/databases/$(database)/documents/rooms/$(roomId)).data.ownerId == request.auth.uid);
+
+        allow update, delete:
+          if request.auth != null
+          && (request.auth.uid == requesterId
+            ||
+            get(/databases/$(database)/documents/rooms/$(roomId)).data.ownerId == request.auth.uid
+          );
+      }
+    }
+
+    // =========================================================================
+    // GAME ROOMS
+    // =========================================================================
+
+    match /gameRooms/{roomId} {
+
+      allow read:
+        if request.auth != null
+        && (resource.data.isPublic == true
+          ||
+          exists(/databases/$(database)/documents/gameRooms/$(roomId)/members/$(request.auth.uid))
+        );
+
+      allow create:
+        if request.auth != null
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.category is string;
+
+      allow update:
+        if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+
+      allow delete:
+        if request.auth != null
+        && resource.data.ownerId == request.auth.uid;
+
+      match /members/{userId} {
+
+        allow read:
+          if request.auth != null
+          && (
+            request.auth.uid == userId
+            ||
+            get(/databases/$(database)/documents/gameRooms/$(roomId)).data.ownerId == request.auth.uid);
+
+        allow create:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow delete:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow update:
+          if false;
+      }
+
+      match /messages/{messageId} {
+
+        allow read:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/gameRooms/$(roomId)/members/$(request.auth.uid));
+
+        allow create:
+          if request.auth != null
+          && request.resource.data.userId == request.auth.uid
+          && exists(/databases/$(database)/documents/gameRooms/$(roomId)/members/$(request.auth.uid)
+          );
+
+        allow update, delete:
+          if request.auth != null
+          && resource.data.userId == request.auth.uid;
+      }
+
+      match /challenges/{challengeId} {
+
+        allow read:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/gameRooms/$(roomId)/members/$(request.auth.uid)
+          );
+
+        allow create:
+          if request.auth != null
+          && request.resource.data.creatorId == request.auth.uid
+          && exists(/databases/$(database)/documents/gameRooms/$(roomId)/members/$(request.auth.uid));
+
+        allow update, delete:
+          if request.auth != null
+          && resource.data.creatorId == request.auth.uid;
+
+        match /submissions/{submissionId} {
+
+          allow read:
+            if request.auth != null
+            && (resource.data.userId == request.auth.uid
+              ||
+              get(/databases/$(database)/documents/gameRooms/$(roomId)).data.ownerId == request.auth.uid
+            );
+
+          allow create:
+            if request.auth != null
+            && request.resource.data.userId == request.auth.uid
+            && exists(/databases/$(database)/documents/gameRooms/$(roomId)/members/$(request.auth.uid)
+            );
+
+          allow update:
+            if request.auth != null
+            && (
+              resource.data.userId == request.auth.uid
+              ||
+              get(/databases/$(database)/documents/gameRooms/$(roomId)
+              ).data.ownerId == request.auth.uid
+            );
+
+          allow delete:
+            if request.auth != null
+            && resource.data.userId == request.auth.uid;
+        }
+      }
+    }
+
+
+    // =========================================================================
+    // WALLET
+    // =========================================================================
+    //
+    // Client can read its own wallet and transaction history.
+    // Wallet balance/transactions are backend-controlled.
+    match /wallets/{userId} {
+      allow read:
+        if request.auth != null
+        && request.auth.uid == userId;
+
+      allow create, update, delete:
+        if false;
+
+      match /transactions/{transactionId} {
+        allow read:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow create, update, delete:
+          if false;
+      }
+    }
+
+    // Pending top-up requests may be created by the authenticated owner.
+    // This does NOT grant permission to change wallet balance.
+    match /walletTopups/{topUpId} {
+      allow create:
+        if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 100000
+        && request.resource.data.status == 'pending';
+
+      allow read:
+        if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      allow update, delete:
+        if false;
+    }
+
+    // =========================================================================
+    // PAYMENT SETUP
+    // =========================================================================
+    // The signed-in user may submit bank/UPI setup data, but can NEVER mark
+    // bank/UPI as verified from the client. Verification must be performed by
+    // a trusted backend/payment provider.
+    match /users/{userId}/paymentMethods/{methodId} {
+      allow read:
+        if request.auth != null
+        && request.auth.uid == userId;
+
+      allow create:
+        if request.auth != null
+        && request.auth.uid == userId
+        && methodId == 'setup'
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.paymentEnabled == false
+        && request.resource.data.bank.status in ['pending']
+        && request.resource.data.upi.status in ['locked'];
+
+      allow update:
+        if request.auth != null
+        && request.auth.uid == userId
+        && methodId == 'setup'
+        && request.resource.data.userId == resource.data.userId
+        && request.resource.data.paymentEnabled == false
+        // Bank verification is backend-controlled; the client must preserve
+        // the existing bank status.
+        && request.resource.data.bank.status == resource.data.bank.status
+        && (
+          // Before verification: user may resubmit bank details.
+          (resource.data.bank.status == 'pending'
+            && request.resource.data.bank.status == 'pending'
+            && request.resource.data.upi.status == 'locked')
+          ||
+          // After bank verification: user may submit/update UPI for verification.
+          (resource.data.bank.status == 'verified'
+            && request.resource.data.bank.status == 'verified'
+            && resource.data.upi.status == 'locked'
+            && request.resource.data.upi.status == 'pending')
+          ||
+          (resource.data.bank.status == 'verified'
+            && request.resource.data.bank.status == 'verified'
+            && resource.data.upi.status == 'pending'
+            && request.resource.data.upi.status == 'pending')
+        );
+
+      allow delete: if false;
+    }
+
+    // A payment request can be created by its owner only after BOTH methods
+    // are backend-verified. The client cannot update the payment result.
+    match /payments/{paymentId} {
+      allow create:
+        if request.auth != null
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.amount <= 100000
+        && request.resource.data.currency == 'INR'
+        && request.resource.data.status == 'pending'
+        && request.resource.data.provider is string
+        && request.resource.data.upiId is string
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/paymentMethods/setup)
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)/paymentMethods/setup).data.bank.status == 'verified'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)/paymentMethods/setup).data.upi.status == 'verified';
+
+      allow get, list:
+        if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      allow update, delete: if false;
+    }
+
+    // =========================================================================
+    // CHAT ROOMS
+    // =========================================================================
+
+    match /chatRooms/{roomId} {
+
+      // -----------------------------------------------------------------------
+      // ROOM
+      // -----------------------------------------------------------------------
+
+      allow read:
+        if request.auth != null;
+
+      // -----------------------------------------------------------------------
+      // MEMBERS
+      // -----------------------------------------------------------------------
+
+      match /members/{userId} {
+
+        allow read:
+          if request.auth != null;
+
+        allow create:
+          if request.auth != null
+          && request.auth.uid == userId;
+
+        allow delete:
+          if request.auth != null
+          && request.auth.uid == userId;
+      }
+
+      // -----------------------------------------------------------------------
+      // MESSAGES
+      // -----------------------------------------------------------------------
+
+      match /messages/{messageId} {
+
+        allow read:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/chatRooms/$(roomId)/members/$(request.auth.uid)
+          );
+
+        allow create:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/chatRooms/$(roomId)/members/$(request.auth.uid)
+          )
+          && request.resource.data.senderId == request.auth.uid;
+
+        allow update, delete:
+          if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // RULES
+      // -----------------------------------------------------------------------
+
+      match /rules/{ruleId} {
+
+        allow read:
+          if request.auth != null;
+
+        // Owner/moderator creates active rule.
+        allow create:
+          if request.auth != null
+          && (
+            get(/databases/$(database)/documents/chatRooms/$(roomId)).data.ownerId == request.auth.uid
+
+            ||
+
+            get(/databases/$(database)/documents/chatRooms/$(roomId)/members/$(request.auth.uid)).data.role == 'moderator'
+          )
+          && request.resource.data.status == 'active'
+          && request.resource.data.isActive == true;
+
+        // Member creates pending suggestion.
+        allow create:
+          if request.auth != null
+          && exists(/databases/$(database)/documents/chatRooms/$(roomId)/members/$(request.auth.uid)
+          )
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.isActive == false;
+
+        // Owner/moderator updates rule.
+        allow update:
+          if request.auth != null
+          && (get(/databases/$(database)/documents/chatRooms/$(roomId)
+            ).data.ownerId == request.auth.uid
+
+            ||
+
+            get(/databases/$(database)/documents/chatRooms/$(roomId)/members/$(request.auth.uid)
+            ).data.role == 'moderator'
+          )
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly([
+                 'status',
+                 'isActive',
+                 'approvedBy',
+                 'approvedAt',
+                 'reviewedBy',
+                 'reviewedAt',
+                 'updatedAt'
+               ]);
+
+        allow delete:
+          if false;
+      }
+
+      // -----------------------------------------------------------------------
+      // CHALLENGES
+      // -----------------------------------------------------------------------
+
+      match /challenges/{challengeId} {
+
+        allow read:
+          if request.auth != null;
+
+        allow create:
+          if request.auth != null;
+
+        allow update, delete:
+          if false;
+
+        match /submissions/{submissionId} {
+
+          allow read:
+            if request.auth != null;
+
+          allow create:
+            if request.auth != null
+            && exists(/databases/$(database)/documents/chatRooms/$(roomId)/members/$(request.auth.uid)
+            )
+            && request.resource.data.userId == request.auth.uid;
+
+          allow update, delete:
+            if false;
+        }
+      }
+    }
+
+    // =========================================================================
+    // IMPORTANT:
+    // DO NOT ADD ANOTHER TOP-LEVEL /chatSettings RULE HERE.
+    //
+    // Chat settings are already correctly handled above at:
+    //
+    // /users/{userId}/chatSettings/{chatId}
+    //
+    // =========================================================================
+  }
+}
