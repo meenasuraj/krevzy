@@ -2365,114 +2365,231 @@ class _ChatScreenState extends State<ChatScreen> {
   // MESSAGE INPUT
   // ===========================================================================
 
+  Future<void> _showComposerActionsSheet() async {
+    if (!_isUnlocked || _isSending || !mounted) return;
+
+    final colorScheme = Theme.of(context).colorScheme;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      backgroundColor: colorScheme.surface,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+            child: Wrap(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.content_paste_rounded),
+                  title: const Text('Paste'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _pasteFromClipboard();
+                  },
+                ),
+                if (_settingBool(KrevzyKeyboardChatSettings.stickers))
+                  ListTile(
+                    leading: const Icon(Icons.sticky_note_2_outlined),
+                    title: const Text('Stickers'),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      _showStickerPicker();
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.text_format_rounded),
+                  title: const Text('Font & tick settings'),
+                  onTap: () {
+                    Navigator.pop(sheetContext);
+                    _showChatStyleSheet();
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildMessageInput() {
     final colorScheme = Theme.of(context).colorScheme;
 
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (_settingBool(KrevzyKeyboardChatSettings.clipboard))
-              IconButton(
-                tooltip: 'Paste',
+            // Instagram-style compact + action.
+            SizedBox(
+              width: 42,
+              height: 46,
+              child: IconButton(
+                tooltip: 'More',
+                padding: EdgeInsets.zero,
                 onPressed: !_isUnlocked || _isSending
                     ? null
-                    : _pasteFromClipboard,
-                icon: const Icon(Icons.content_paste_rounded),
+                    : _showComposerActionsSheet,
+                icon: const Icon(Icons.add_rounded, size: 27),
               ),
-            if (_settingBool(KrevzyKeyboardChatSettings.emoji))
-              IconButton(
-                tooltip: 'Emoji',
-                onPressed: !_isUnlocked || _isSending ? null : _showEmojiPicker,
-                icon: const Icon(Icons.emoji_emotions_outlined),
-              ),
-            if (_settingBool(KrevzyKeyboardChatSettings.stickers))
-              IconButton(
-                tooltip: 'Stickers',
-                onPressed: !_isUnlocked || _isSending
-                    ? null
-                    : _showStickerPicker,
-                icon: const Icon(Icons.sticky_note_2_outlined),
-              ),
-            IconButton(
-              tooltip: 'Font & tick settings',
-              onPressed: !_isUnlocked ? null : _showChatStyleSheet,
-              icon: const Icon(Icons.text_format_rounded),
             ),
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(24),
-                  border: Border.all(
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+
+            if (_settingBool(KrevzyKeyboardChatSettings.emoji))
+              SizedBox(
+                width: 42,
+                height: 46,
+                child: IconButton(
+                  tooltip: 'Emoji',
+                  padding: EdgeInsets.zero,
+                  onPressed: !_isUnlocked || _isSending
+                      ? null
+                      : _showEmojiPicker,
+                  icon: const Icon(
+                    Icons.emoji_emotions_outlined,
+                    size: 24,
                   ),
                 ),
-                child: TextField(
-                  controller: _messageController,
-                  focusNode: _messageFocusNode,
-                  textInputAction: TextInputAction.send,
-                  minLines: 1,
-                  maxLines: 5,
-                  enabled: _isUnlocked && !_isSending,
-                  decoration: const InputDecoration(
-                    hintText: 'Type a message...',
-                    border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 12,
+              ),
+
+            const SizedBox(width: 2),
+
+            // The input is explicitly constrained so it can never become
+            // the tall 5-line capsule shown in the screenshot when empty.
+            Expanded(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  minHeight: 46,
+                  maxHeight: 108,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: colorScheme.outlineVariant.withValues(
+                        alpha: 0.45,
+                      ),
                     ),
                   ),
-                  onSubmitted: (_) {
-                    _sendMessage();
-                  },
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Container(
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.5),
-                ),
-              ),
-              child: IconButton(
-                tooltip: 'Send payment',
-                onPressed: !_isUnlocked || _isSending
-                    ? null
-                    : _openPaymentSheet,
-                icon: const Icon(Icons.currency_rupee_rounded),
-              ),
-            ),
-            const SizedBox(width: 4),
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [colorScheme.primary, colorScheme.secondary],
-                ),
-              ),
-              child: IconButton(
-                tooltip: 'Send',
-                onPressed: _isSending || !_isUnlocked ? null : _sendMessage,
-                color: Colors.white,
-                icon: _isSending
-                    ? const SizedBox(
-                        width: 19,
-                        height: 19,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                  child: TextField(
+                    controller: _messageController,
+                    focusNode: _messageFocusNode,
+                    enabled: _isUnlocked && !_isSending,
+                    minLines: 1,
+                    maxLines: 4,
+                    keyboardType: TextInputType.multiline,
+                    textInputAction: TextInputAction.newline,
+                    textAlignVertical: TextAlignVertical.center,
+                    decoration: InputDecoration(
+                      hintText: 'Message...',
+                      hintStyle: TextStyle(
+                        color: colorScheme.onSurfaceVariant,
+                        fontSize: 15,
+                      ),
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 11,
+                      ),
+                      suffixIcon: _settingBool(
+                        KrevzyKeyboardChatSettings.stickers,
                       )
-                    : const Icon(Icons.send_rounded),
+                          ? IconButton(
+                              tooltip: 'Stickers',
+                              padding: EdgeInsets.zero,
+                              onPressed: !_isUnlocked || _isSending
+                                  ? null
+                                  : _showStickerPicker,
+                              icon: const Icon(
+                                Icons.sticky_note_2_outlined,
+                                size: 21,
+                              ),
+                            )
+                          : null,
+                    ),
+                    onSubmitted: (value) {
+                      if (value.trim().isNotEmpty) {
+                        _sendMessage();
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(width: 6),
+
+            // Payment action remains available.
+            SizedBox(
+              width: 46,
+              height: 46,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(
+                      alpha: 0.45,
+                    ),
+                  ),
+                ),
+                child: IconButton(
+                  tooltip: 'Send payment',
+                  padding: EdgeInsets.zero,
+                  onPressed: !_isUnlocked || _isSending
+                      ? null
+                      : _openPaymentSheet,
+                  icon: const Icon(
+                    Icons.currency_rupee_rounded,
+                    size: 21,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(width: 6),
+
+            // Send button.
+            SizedBox(
+              width: 48,
+              height: 48,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      colorScheme.primary,
+                      colorScheme.secondary,
+                    ],
+                  ),
+                ),
+                child: IconButton(
+                  tooltip: 'Send',
+                  padding: EdgeInsets.zero,
+                  onPressed: _isSending || !_isUnlocked
+                      ? null
+                      : _sendMessage,
+                  color: Colors.white,
+                  icon: _isSending
+                      ? const SizedBox(
+                          width: 19,
+                          height: 19,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.arrow_upward_rounded,
+                          size: 25,
+                        ),
+                ),
               ),
             ),
           ],
